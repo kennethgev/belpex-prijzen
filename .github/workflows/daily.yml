@@ -1,0 +1,66 @@
+name: Prijzen ophalen
+
+on:
+  schedule:
+    # Elke dag om 13:15 UTC (14:15 winter / 15:15 zomer in Brussel),
+    # nadat de day-ahead prijzen voor morgen gepubliceerd zijn.
+    - cron: "15 13 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "daily = laatste dagen bijwerken, backfill = historiek ophalen"
+        type: choice
+        options: [daily, backfill]
+        default: daily
+      source:
+        description: "Welke prijzen"
+        type: choice
+        options: [all, dayahead, imbalance]
+        default: all
+      start:
+        description: "Startdatum JJJJ-MM-DD (leeg = standaard)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prijzen
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Prijzen ophalen
+        env:
+          ENTSOE_TOKEN: ${{ secrets.ENTSOE_TOKEN }}
+          MODE: ${{ inputs.mode || 'daily' }}
+          SOURCE: ${{ inputs.source || 'all' }}
+          START: ${{ inputs.start }}
+        run: |
+          args=("$MODE" --source "$SOURCE")
+          if [ -n "$START" ]; then args+=(--start "$START"); fi
+          python fetch_prices.py "${args[@]}"
+
+      - name: Wijzigingen opslaan
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "Geen nieuwe gegevens."
+          else
+            git commit -m "Prijzen bijgewerkt $(date -u +%Y-%m-%d)"
+            git push
+          fi
