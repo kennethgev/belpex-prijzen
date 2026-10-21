@@ -7,8 +7,19 @@ Bewaart elke dag automatisch de Belgische elektriciteitsprijzen als CSV-bestande
 | `data/dayahead_<jaar>.csv` | Day-ahead prijzen (Belpex/EPEX) in hun eigen resolutie: per uur tot oktober 2025, daarna per kwartier | ENTSO-E |
 | `data/dayahead_hourly_<jaar>.csv` | Day-ahead uurprijzen. Sinds de kwartiermarkt is dit het gemiddelde van de vier kwartieren | berekend |
 | `data/imbalance_<jaar>.csv` | Onbalansprijzen per kwartier, met systeemonbalans en kwaliteitsstatus | Elia Open Data |
+| `data/weer_ukkel_<jaar>.csv` | Dagwaarnemingen in Ukkel: temperatuur (max, min, gemiddeld) in °C, neerslag in mm, wind in m/s, zonneschijn (uu:mm en in minuten) | KMI |
+| `data/kmi_aws_hourly_<jaar>.csv` | Uurwaarden van alle automatische KMI-weerstations: gemeten **globale instraling** (`global_radiation_wm2`, W/m²), temperatuur, vochtigheid, luchtdruk, neerslag, wind, zonneduur | KMI open data |
+| `data/kmi_aws_stations.csv` | Naam, ligging en hoogte van de weerstations | KMI open data |
+| `data/solar_pv_<jaar>.csv` | PV-productie per kwartier voor België, Vlaanderen, Wallonië en Brussel: gemeten, voorspellingen (day-ahead, 11u day-ahead, meest recent), opgevolgd vermogen en belastingsfactor | Elia Open Data |
 
-Kolommen:
+Opmerkingen bij de nieuwe bronnen:
+
+- **KMI-weerstations:** het KMI geeft de eindtijd van elk uur. In ons bestand staat de **begintijd**, zoals bij de prijzen: `10:00` betekent dus 10:00 tot 11:00. Zeebrugge meet geen instraling. De kolommen `radiation_validated` en `temp_validated` tonen of het KMI de waarde al gevalideerd heeft. De historiek loopt vanaf 2015.
+- **Elia PV:** de historiek begint op 1 oktober 2020. Per provincie kan ook, maar alle 14 regio's samen zouden ongeveer 60 MB per jaar geven. Pas daarvoor `PV_REGIONS` aan in `fetch_prices.py`.
+
+Het KMI-bestand bevat altijd alleen de laatste 60 dagen. De weerhistoriek begint dus 60 dagen vóór de eerste run en groeit daarna elke dag aan. Een dag die het KMI later corrigeert, wordt bij de volgende run overschreven.
+
+Kolommen bij de prijzen:
 
 - `datetime_utc` is het begin van de periode in UTC. Gebruik deze kolom als unieke sleutel.
 - `datetime_brussels` is hetzelfde moment in Belgische tijd, met de UTC-afwijking erbij (`+01:00` of `+02:00`). Zo blijven de dubbele uren bij de overgang naar wintertijd uit elkaar.
@@ -48,9 +59,17 @@ Klik **Run workflow** en kies **mode** `backfill` en **source** `imbalance`. Zon
 ### 6. Zodra je ENTSO-E-token binnen is
 1. **Settings**, dan **Secrets and variables**, dan **Actions**, dan **New repository secret**.
 2. Naam: `ENTSOE_TOKEN`. Bij *Secret* plak je je token. Klik **Add secret**.
-3. Ga naar **Actions** en doe **Run workflow** met **mode** `backfill` en **source** `dayahead`. Dit haalt de day-ahead prijzen op vanaf januari 2015 en duurt ongeveer 5 tot 10 minuten.
+3. Ga naar **Actions** en doe **Run workflow** met **mode** `backfill` en **source** `dayahead`. Dit haalt de day-ahead prijzen op vanaf januari 2015.
 
-Daarna loopt alles elke dag vanzelf.
+### 7. Historiek van weer en PV-productie
+Doe telkens **Run workflow** met **mode** `backfill` en zonder startdatum:
+- **source** `aws`: KMI-weerstations vanaf 2015.
+- **source** `solar`: Elia PV-productie vanaf oktober 2020.
+- **source** `weather`: de laatste 60 dagen van Ukkel.
+
+Start ze één voor één en wacht telkens tot de vorige klaar is.
+
+Daarna loopt alles elke dag vanzelf. Valt één bron uit, dan worden de andere toch opgehaald en bewaard. Je krijgt dan wel een mail dat de run mislukt is.
 
 ---
 

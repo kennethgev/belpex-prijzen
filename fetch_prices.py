@@ -4,16 +4,25 @@ Bronnen:
   - Day-ahead (Belpex / EPEX SDAC): ENTSO-E Transparency Platform, documenttype A44.
     Vereist een API-token in de omgevingsvariabele ENTSOE_TOKEN.
   - Onbalansprijzen per kwartier: Elia Open Data (geen sleutel nodig).
+  - Dagwaarnemingen Ukkel: KMI (laatste 60 dagen, geen sleutel nodig).
+  - Uurwaarden van de automatische weerstations (AWS) van het KMI, met
+    globale instraling: KMI open data (geen sleutel nodig).
+  - PV-productie België per kwartier (gemeten en voorspeld): Elia Open Data.
 
 Gebruik:
   python fetch_prices.py daily
   python fetch_prices.py backfill --source dayahead --start 2015-01-01
   python fetch_prices.py backfill --source imbalance --start 2024-01-01
+  python fetch_prices.py backfill --source aws --start 2015-01-01
+  python fetch_prices.py backfill --source solar --start 2020-10-01
+  python fetch_prices.py daily --source weather
 """
 
 import argparse
 import csv
+import json
 import os
+import re
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -49,6 +58,53 @@ IMBALANCE_FIELDS = [
     "quality_status",
     "source_dataset",
 ]
+
+KMI_UKKEL_URL = "https://www.meteo.be/resources/climatology/uccle_month/Ukkel_waarnemingen.txt"
+WEATHER_FIELDS = [
+    "date",
+    "temp_max_c",
+    "temp_min_c",
+    "temp_avg_c",
+    "precipitation_mm",
+    "wind_ms",
+    "sunshine_hhmm",
+    "sunshine_min",
+]
+
+KMI_AWS_URL = "https://opendata.meteo.be/service/aws/wfs"
+# KMI-veld -> kolomnaam in onze CSV
+AWS_COLUMNS = {
+    "temp_dry_shelter_avg": "temp_c",
+    "humidity_rel_shelter_avg": "humidity_pct",
+    "pressure": "pressure_hpa",
+    "precip_quantity": "precipitation_mm",
+    "wind_speed_10m": "wind_speed_ms",
+    "wind_gusts_speed": "wind_gusts_ms",
+    "sun_duration": "sun_duration_min",
+    "short_wave_from_sky_avg": "global_radiation_wm2",
+    "sun_int_avg": "sun_int_wm2",
+}
+AWS_FIELDS = (
+    ["datetime_utc", "datetime_brussels", "station_code", "station_name"]
+    + list(AWS_COLUMNS.values())
+    + ["radiation_validated", "temp_validated"]
+)
+AWS_STATION_FIELDS = ["station_code", "station_name", "latitude", "longitude", "altitude_m", "date_begin", "date_end"]
+
+ELIA_PV = "ods032"
+# Alle 14 regio's samen zouden ~60 MB per jaar geven; deze vier volstaan meestal.
+# Mogelijke extra waarden: Antwerp, East-Flanders, Flemish-Brabant, Limburg,
+# West-Flanders, Hainaut, Liège, Luxembourg, Namur, Walloon-Brabant.
+PV_REGIONS = ["Belgium", "Flanders", "Wallonia", "Brussels"]
+PV_COLUMNS = {
+    "measured": "measured_mw",
+    "mostrecentforecast": "most_recent_forecast_mw",
+    "dayahead11hforecast": "dayahead_11h_forecast_mw",
+    "dayaheadforecast": "dayahead_forecast_mw",
+    "monitoredcapacity": "monitored_capacity_mw",
+    "loadfactor": "load_factor_pct",
+}
+PV_FIELDS = ["datetime_utc", "datetime_brussels", "region"] + list(PV_COLUMNS.values())
 
 session = requests.Session()
 session.headers["User-Agent"] = "belpex-prijzen (github.com)"
@@ -99,6 +155,15 @@ def month_chunks(start, end):
         cur = nxt
 
 
+def year_chunks(start, end):
+    """Splitst [start, end) in stukken van maximaal één kalenderjaar."""
+    cur = start
+    while cur < end:
+        nxt = date(cur.year + 1, 1, 1)
+        yield cur, min(nxt, end)
+        cur = nxt
+
+
 # ---------------------------------------------------------------- opslag
 
 
@@ -131,7 +196,7 @@ def merge_into_year_files(prefix, fields, rows, key, replace_keys=None):
     """
     by_year = defaultdict(list)
     for row in rows:
-        by_year[int(row["datetime_brussels"][:4])].append(row)
+        by_year[int((row.get("datetime_brussels") or row["date"])[:4])].append(row)
     for year, new_rows in sorted(by_year.items()):
         path = year_file(prefix, year)
         existing = read_csv(path)
@@ -140,7 +205,15 @@ def merge_into_year_files(prefix, fields, rows, key, replace_keys=None):
             existing = [r for r in existing if not replace_keys(r)]
         merged = {key(r): r for r in existing}
         merged.update((key(r), r) for r in new_rows)
-        out = sorted(merged.values(), key=lambda r: (r["datetime_utc"], r.get("resolution_min", "")))
+        out = sorted(
+            merged.values(),
+            key=lambda r: (
+                r.get("datetime_utc") or r["date"],
+                r.get("resolution_min", ""),
+                r.get("station_code", ""),
+                r.get("region", ""),
+            ),
+        )
         write_csv(path, fields, out)
         log(f"  {path.name}: {len(out)} rijen ({len(out) - before:+d})")
 
@@ -200,7 +273,7 @@ def fetch_dayahead(token, start, end):
     }
     r = get(ENTSOE_URL, params)
     if r.status_code == 401:
-        sys.exit("ENTSO-E weigert het token (401). Controleer de secret ENTSOE_TOKEN.")
+        raise RuntimeError("ENTSO-E weigert het token (401). Controleer de secret ENTSOE_TOKEN.")
     if "Acknowledgement_MarketDocument" in r.text:
         reason = strip_ns(ET.fromstring(r.text)).findtext(".//Reason/text") or r.text[:200]
         if "No matching data" in reason:
@@ -267,7 +340,8 @@ def run_dayahead(start, end):
         warn("Geen ENTSOE_TOKEN ingesteld: day-ahead prijzen worden overgeslagen.")
         return
     log(f"Day-ahead (ENTSO-E) {start} tot {end}")
-    for a, b in month_chunks(start, end):
+    # ENTSO-E staat tot een jaar per verzoek toe; dat geeft veel minder verzoeken.
+    for a, b in year_chunks(start, end):
         points = fetch_dayahead(token, a, b)
         log(f" {a} - {b}: {len(points)} prijzen")
         store_dayahead(points)
@@ -322,13 +396,171 @@ def run_imbalance(start, end):
             merge_into_year_files("imbalance", IMBALANCE_FIELDS, rows, key=lambda r: r["datetime_utc"])
 
 
+# ---------------------------------------------------------------- KMI weer Ukkel
+
+
+def parse_kmi_ukkel(text):
+    """Leest de vaste-breedte tabel van het KMI: één regel per dag."""
+    rows = []
+    for line in text.splitlines():
+        parts = line.split()
+        if not parts or not re.fullmatch(r"\d{2}-\d{2}-\d{4}", parts[0]):
+            continue
+        if len(parts) != 7:
+            warn(f"KMI: onverwachte regel overgeslagen: {line.strip()!r}")
+            continue
+        d, tmax, tmin, tavg, rain, wind, sun = parts
+        # Ontbrekende waarden (bv. "-") laten we leeg, zodat Power BI ze als leeg leest.
+        tmax, tmin, tavg, rain, wind = (v if re.fullmatch(r"-?\d+(\.\d+)?", v) else "" for v in (tmax, tmin, tavg, rain, wind))
+        day, month, year = d.split("-")
+        sun_min = ""
+        if re.fullmatch(r"\d{1,2}:\d{2}", sun):
+            h, m = sun.split(":")
+            sun_min = str(int(h) * 60 + int(m))
+        else:
+            sun = ""
+        rows.append(
+            {
+                "date": f"{year}-{month}-{day}",
+                "temp_max_c": tmax,
+                "temp_min_c": tmin,
+                "temp_avg_c": tavg,
+                "precipitation_mm": rain,
+                "wind_ms": wind,
+                "sunshine_hhmm": sun,
+                "sunshine_min": sun_min,
+            }
+        )
+    return rows
+
+
+def run_weather():
+    log("Weer Ukkel (KMI), laatste 60 dagen")
+    r = get(KMI_UKKEL_URL, {})
+    r.raise_for_status()
+    r.encoding = "utf-8"
+    rows = parse_kmi_ukkel(r.text)
+    log(f" {len(rows)} dagen")
+    if not rows:
+        warn("KMI: geen gegevens gevonden, is het formaat van het bestand veranderd?")
+        return
+    merge_into_year_files("weer_ukkel", WEATHER_FIELDS, rows, key=lambda r: r["date"])
+
+
+# ---------------------------------------------------------------- KMI weerstations (AWS)
+
+
+def fetch_aws_stations():
+    r = get(
+        KMI_AWS_URL,
+        {"service": "WFS", "version": "2.0.0", "request": "GetFeature", "typeNames": "aws:aws_station", "outputFormat": "application/json"},
+    )
+    r.raise_for_status()
+    stations = {}
+    for feat in r.json()["features"]:
+        p = feat["properties"]
+        # GeoJSON: (lengte, breedte)
+        lon, lat = feat["geometry"]["coordinates"]
+        stations[str(p["code"])] = {
+            "station_code": str(p["code"]),
+            "station_name": p["name"].title(),
+            "latitude": lat,
+            "longitude": lon,
+            "altitude_m": p.get("altitude"),
+            "date_begin": (p.get("date_begin") or "")[:10],
+            "date_end": (p.get("date_end") or "")[:10],
+        }
+    return stations
+
+
+def fetch_aws_hours(start_utc, end_utc):
+    # Het KMI geeft per uur de EINDtijd; uur "08:00" gaat over 07:00-08:00 UTC.
+    # Daarom vragen we (start, end] op en zetten we om naar begintijd.
+    cql = f"timestamp > '{iso_utc(start_utc)}' AND timestamp <= '{iso_utc(end_utc)}'"
+    r = get(
+        KMI_AWS_URL,
+        {
+            "service": "WFS",
+            "version": "2.0.0",
+            "request": "GetFeature",
+            "typeNames": "aws:aws_1hour",
+            "outputFormat": "application/json",
+            "propertyName": ",".join(["code", "timestamp", "qc_flags", *AWS_COLUMNS]),
+            "CQL_FILTER": cql,
+        },
+    )
+    r.raise_for_status()
+    return [f["properties"] for f in r.json()["features"]]
+
+
+def aws_row(p, stations):
+    end = datetime.fromisoformat(p["timestamp"].replace("Z", "+00:00"))
+    start = end - timedelta(hours=1)
+    try:
+        validated = json.loads(p.get("qc_flags") or "{}").get("validated", {})
+    except ValueError:
+        validated = {}
+    code = str(p["code"])
+    row = {
+        "datetime_utc": iso_utc(start),
+        "datetime_brussels": iso_local(start),
+        "station_code": code,
+        "station_name": stations.get(code, {}).get("station_name", ""),
+        "radiation_validated": str(validated.get("SHORT_WAVE_FROM_SKY_AVG", "")).lower(),
+        "temp_validated": str(validated.get("TEMP_DRY_SHELTER_AVG", "")).lower(),
+    }
+    for src, col in AWS_COLUMNS.items():
+        v = p.get(src)
+        row[col] = "" if v is None else f"{v:g}"
+    return row
+
+
+def run_aws(start, end):
+    log(f"Weerstations (KMI AWS) {start} tot {end}")
+    stations = fetch_aws_stations()
+    write_csv(DATA_DIR / "kmi_aws_stations.csv", AWS_STATION_FIELDS, sorted(stations.values(), key=lambda s: s["station_code"]))
+    for a, b in month_chunks(start, end):
+        rows = [aws_row(p, stations) for p in fetch_aws_hours(local_midnight_utc(a), local_midnight_utc(b))]
+        log(f" {a} - {b}: {len(rows)} stationsuren")
+        if rows:
+            merge_into_year_files("kmi_aws_hourly", AWS_FIELDS, rows, key=lambda r: (r["datetime_utc"], r["station_code"]))
+
+
+# ---------------------------------------------------------------- Elia PV-productie
+
+
+def pv_row(rec):
+    t = datetime.fromisoformat(rec["datetime"])
+    row = {"datetime_utc": iso_utc(t), "datetime_brussels": iso_local(t), "region": rec["region"]}
+    for src, col in PV_COLUMNS.items():
+        v = rec.get(src)
+        row[col] = "" if v is None else f"{v:g}"
+    return row
+
+
+def run_solar(start, end):
+    log(f"PV-productie (Elia) {start} tot {end}, regio's: {', '.join(PV_REGIONS)}")
+    regions = " or ".join(f'region = "{r}"' for r in PV_REGIONS)
+    for a, b in month_chunks(start, end):
+        where = (
+            f'datetime >= "{iso_utc(local_midnight_utc(a))}" and datetime < "{iso_utc(local_midnight_utc(b))}"'
+            f" and ({regions})"
+        )
+        r = get(ELIA_URL.format(dataset=ELIA_PV), {"where": where, "order_by": "datetime", "timezone": "UTC"})
+        r.raise_for_status()
+        rows = [pv_row(rec) for rec in r.json()]
+        log(f" {a} - {b}: {len(rows)} kwartieren")
+        if rows:
+            merge_into_year_files("solar_pv", PV_FIELDS, rows, key=lambda r: (r["datetime_utc"], r["region"]))
+
+
 # ---------------------------------------------------------------- main
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("mode", choices=["daily", "backfill"])
-    p.add_argument("--source", choices=["all", "dayahead", "imbalance"], default="all")
+    p.add_argument("--source", choices=["all", "dayahead", "imbalance", "weather", "aws", "solar"], default="all")
     p.add_argument("--start", type=date.fromisoformat, help="eerste dag (JJJJ-MM-DD), Brusselse tijd")
     p.add_argument("--end", type=date.fromisoformat, help="dag na de laatste dag (standaard: overmorgen)")
     args = p.parse_args()
@@ -340,15 +572,34 @@ def main():
         # Een paar dagen overlap: zo worden gemiste runs en latere correcties
         # (bv. Elia-validatie) automatisch bijgewerkt.
         da_start = args.start or today - timedelta(days=3)
-        im_start = args.start or today - timedelta(days=10)
+        im_start = aws_start = pv_start = args.start or today - timedelta(days=10)
     else:
         da_start = args.start or date(2015, 1, 5)
         im_start = args.start or date(2024, 1, 1)
+        aws_start = args.start or date(2015, 1, 1)
+        pv_start = args.start or date(2020, 10, 1)  # begin van de Elia-dataset
 
-    if args.source in ("all", "dayahead"):
-        run_dayahead(da_start, end)
-    if args.source in ("all", "imbalance"):
-        run_imbalance(im_start, min(end, today + timedelta(days=1)))
+    until_today = min(end, today + timedelta(days=1))
+    jobs = {
+        "dayahead": lambda: run_dayahead(da_start, end),
+        "imbalance": lambda: run_imbalance(im_start, until_today),
+        # Het KMI-bestand bevat altijd enkel de laatste 60 dagen.
+        "weather": run_weather,
+        "aws": lambda: run_aws(aws_start, until_today),
+        "solar": lambda: run_solar(pv_start, until_today),
+    }
+    # Een storing bij één bron mag de andere niet tegenhouden.
+    failed = []
+    for name, job in jobs.items():
+        if args.source not in ("all", name):
+            continue
+        try:
+            job()
+        except Exception as e:
+            warn(f"{name} mislukt: {e}")
+            failed.append(name)
+    if failed:
+        sys.exit(f"Mislukt: {', '.join(failed)}")
 
 
 if __name__ == "__main__":
