@@ -13,9 +13,9 @@ on:
         options: [daily, backfill]
         default: daily
       source:
-        description: "Welke prijzen"
+        description: "Welke gegevens"
         type: choice
-        options: [all, dayahead, imbalance]
+        options: [all, dayahead, imbalance, weather, aws, solar]
         default: all
       start:
         description: "Startdatum JJJJ-MM-DD (leeg = standaard)"
@@ -32,7 +32,7 @@ concurrency:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
 
@@ -54,6 +54,8 @@ jobs:
           python fetch_prices.py "${args[@]}"
 
       - name: Wijzigingen opslaan
+        # Ook na een fout of time-out bewaren wat al binnen is.
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
