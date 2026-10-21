@@ -334,6 +334,34 @@ def store_dayahead(points):
     merge_into_year_files("dayahead_hourly", HOURLY_FIELDS, hourly_rows, key=lambda r: r["datetime_utc"])
 
 
+BELIX_FIELDS = ["month", "belix_eur_mwh", "hours", "final"]
+
+
+def compute_belix():
+    """Belix = maandgemiddelde van de Belpex day-ahead prijs (base)."""
+    by_month = defaultdict(list)
+    for path in sorted(DATA_DIR.glob("dayahead_hourly_*.csv")):
+        for r in read_csv(path):
+            by_month[r["datetime_brussels"][:7]].append(float(r["price_eur_mwh"]))
+    rows = []
+    for month, prices in sorted(by_month.items()):
+        y, m = map(int, month.split("-"))
+        first, nxt = date(y, m, 1), date(y + (m == 12), m % 12 + 1, 1)
+        hours_in_month = (local_midnight_utc(nxt) - local_midnight_utc(first)).total_seconds() / 3600
+        rows.append(
+            {
+                "month": month,
+                "belix_eur_mwh": f"{sum(prices) / len(prices):.2f}",
+                "hours": len(prices),
+                # Een maand is pas definitief als alle uren bekend zijn.
+                "final": str(len(prices) == hours_in_month).lower(),
+            }
+        )
+    if rows:
+        write_csv(DATA_DIR / "belix_monthly.csv", BELIX_FIELDS, rows)
+        log(f"  belix_monthly.csv: {len(rows)} maanden")
+
+
 def run_dayahead(start, end):
     token = os.environ.get("ENTSOE_TOKEN", "").strip()
     if not token:
@@ -346,6 +374,7 @@ def run_dayahead(start, end):
         log(f" {a} - {b}: {len(points)} prijzen")
         store_dayahead(points)
         time.sleep(1)
+    compute_belix()
 
 
 # ---------------------------------------------------------------- Elia onbalans

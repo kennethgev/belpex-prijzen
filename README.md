@@ -6,6 +6,7 @@ Bewaart elke dag automatisch de Belgische elektriciteitsprijzen als CSV-bestande
 |---|---|---|
 | `data/dayahead_<jaar>.csv` | Day-ahead prijzen (Belpex/EPEX) in hun eigen resolutie: per uur tot oktober 2025, daarna per kwartier | ENTSO-E |
 | `data/dayahead_hourly_<jaar>.csv` | Day-ahead uurprijzen. Sinds de kwartiermarkt is dit het gemiddelde van de vier kwartieren | berekend |
+| `data/belix_monthly.csv` | **Belix**: maandgemiddelde van de Belpex day-ahead prijs. `final` = `true` zodra alle uren van de maand bekend zijn. Komt op 0,01 € na overeen met de Belix van Elexys. | berekend |
 | `data/imbalance_<jaar>.csv` | Onbalansprijzen per kwartier, met systeemonbalans en kwaliteitsstatus | Elia Open Data |
 | `data/weer_ukkel_<jaar>.csv` | Dagwaarnemingen in Ukkel: temperatuur (max, min, gemiddeld) in °C, neerslag in mm, wind in m/s, zonneschijn (uu:mm en in minuten) | KMI |
 | `data/kmi_aws_hourly_<jaar>.csv` | Uurwaarden van alle automatische KMI-weerstations: gemeten **globale instraling** (`global_radiation_wm2`, W/m²), temperatuur, vochtigheid, luchtdruk, neerslag, wind, zonneduur | KMI open data |
