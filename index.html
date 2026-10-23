@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Energiemarkt België</title>
+<meta name="description" content="Dagelijks bijgewerkte Belgische elektriciteitsprijzen door Renewus: day-ahead (Belpex), duck curve, negatieve prijzen, solar capture rate en onbalans.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Open+Sans:wght@400;600&display=swap">
+<style>
+  /* Renewus-huisstijl: navy en turquoise als hoofdkleuren, koraal als accent; kaarten op een licht blauwgrijze ondergrond. */
+  :root {
+    color-scheme: light;
+    --surface-0: #e7eaef;
+    --surface-1: #ffffff;
+    --border: #d5dae2;
+    --grid: #e9ecf1;
+    --text-primary: #11305f;
+    --text-body: #212529;
+    --text-secondary: #536271;
+    --text-muted: #7d8894;
+    --brand-navy: #11305f;
+    --brand-teal: #04adad;
+    --brand-coral: #f27252;
+    --brand-slate: #536271;
+    --past: #c3cad3;
+    --font-display: "Montserrat", "Segoe UI", system-ui, sans-serif;
+    --font-body: "Open Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-0: #0c1729;
+      --surface-1: #13223a;
+      --border: #24365a;
+      --grid: #1d2e4b;
+      --text-primary: #eef2f8;
+      --text-body: #dfe5ee;
+      --text-secondary: #a9b5c5;
+      --text-muted: #7f8ca0;
+      --brand-navy: #4e7bd6;
+      --brand-teal: #0fb8b5;
+      --brand-coral: #f07050;
+      --brand-slate: #6b7885;
+      --past: #3a4a66;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #0c1729;
+    --surface-1: #13223a;
+    --border: #24365a;
+    --grid: #1d2e4b;
+    --text-primary: #eef2f8;
+    --text-body: #dfe5ee;
+    --text-secondary: #a9b5c5;
+    --text-muted: #7f8ca0;
+    --brand-navy: #4e7bd6;
+    --brand-teal: #0fb8b5;
+    --brand-coral: #f07050;
+    --brand-slate: #6b7885;
+    --past: #3a4a66;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--text-body);
+    font: 15px/1.55 var(--font-body);
+  }
+  main {
+    max-width: 1180px; margin: 0 auto;
+    padding-block: 28px 44px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  h1, h2, h3 { font-family: var(--font-display); color: var(--text-primary); text-wrap: balance; }
+  header h1 { font-size: 1.75rem; margin: 0 0 4px; font-weight: 700; }
+  header p { margin: 0; color: var(--text-secondary); max-width: 65ch; }
+  .updated { color: var(--text-muted); font-size: 0.85rem; margin-top: 6px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 22px 0 8px; }
+  .tile { background: var(--surface-1); border-radius: 8px; padding: 14px 16px; border-top: 3px solid var(--brand-teal); }
+  .tile .label { color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .tile .value { font-family: var(--font-display); color: var(--text-primary); font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .tile .note { color: var(--text-muted); font-size: 0.8rem; }
+  .theme { font-family: var(--font-display); font-size: 1.15rem; margin: 30px 0 10px; display: flex; gap: 10px; align-items: baseline; }
+  .theme small { font-family: var(--font-body); font-weight: 400; font-size: 0.85rem; color: var(--text-secondary); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 14px; }
+  .grid.three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+  section.card { background: var(--surface-1); border-radius: 8px; padding: 16px; min-width: 0; }
+  section.card.wide { grid-column: 1 / -1; }
+  .card h3 { font-size: 1rem; margin: 0 0 2px; font-weight: 600; }
+  .card .sub { color: var(--text-secondary); font-size: 0.85rem; margin: 0 0 10px; }
+  .chart { position: relative; height: 290px; }
+  .chart.small { height: 230px; }
+  .controls { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+  .controls button {
+    font: inherit; font-size: 0.8rem; padding: 3px 11px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border); background: transparent; color: var(--text-secondary);
+  }
+  .controls button:focus-visible, details summary:focus-visible { outline: 2px solid var(--brand-teal); outline-offset: 2px; }
+  .controls button[aria-pressed="true"] { background: var(--brand-navy); border-color: var(--brand-navy); color: #fff; }
+  details { margin-top: 8px; font-size: 0.85rem; color: var(--text-secondary); }
+  details summary { cursor: pointer; }
+  table { border-collapse: collapse; width: 100%; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 3px 6px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  .table-wrap { max-height: 240px; overflow: auto; }
+  footer { margin-top: 30px; color: var(--text-muted); font-size: 0.8rem; max-width: 80ch; }
+  footer a { color: var(--text-secondary); }
+  .error { color: var(--brand-coral); }
+  /* Ingebed met ?blok=...: alleen dat blok, zonder kop, tegels en voet */
+  body.embed { background: var(--surface-1); }
+  body.embed main { padding: 0; max-width: none; }
+  body.embed header, body.embed footer, body.embed .tiles, body.embed .theme { display: none; }
+  body.embed .grid { display: block; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Energiemarkt België</h1>
+    <p>Elektriciteitsprijzen en marktindicatoren voor België, elke dag automatisch bijgewerkt door Renewus.</p>
+    <div class="updated" id="updated">Gegevens laden…</div>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <h2 class="theme">Day-ahead prijs <small>Belpex, €/MWh</small></h2>
+  <div class="grid">
+    <section class="card wide" id="dayahead">
+      <h3>Laatste week en morgen</h3>
+      <p class="sub">Prijs per kwartier. Na de stippellijn: de prijzen van morgen.</p>
+      <div class="chart"><canvas aria-label="Day-ahead prijs per kwartier"></canvas></div>
+    </section>
+    <section class="card wide" id="maand">
+      <h3>Gemiddelde day-ahead prijs per maand en jaar</h3>
+      <p class="sub">Maandgemiddelde (Belix) van de laatste vier jaar. De lopende maand is voorlopig.</p>
+      <div class="chart"><canvas aria-label="Gemiddelde day-ahead prijs per maand en jaar"></canvas></div>
+    </section>
+    <section class="card wide" id="duck">
+      <h3>Duck curve: prijsprofiel over de dag</h3>
+      <p class="sub">Gemiddelde uurprijs als fractie van de duurste uurprijs van die dag. Hoe dieper de dip rond de middag, hoe meer zonne-energie de prijs drukt.</p>
+      <div class="chart"><canvas aria-label="Gemiddeld prijsprofiel per uur en jaar"></canvas></div>
+    </section>
+    <section class="card wide" id="jaar">
+      <h3>Gemiddelde day-ahead prijs en solar capture price per jaar</h3>
+      <p class="sub">De solar capture price is wat een MWh zonnestroom gemiddeld opbracht (gewogen met de Belgische PV-productie, sinds 2021).</p>
+      <div class="chart"><canvas aria-label="Gemiddelde prijs en solar capture price per jaar"></canvas></div>
+    </section>
+  </div>
+
+  <h2 class="theme">Negatieve prijzen <small>day-ahead prijs onder 0 €/MWh</small></h2>
+  <div class="grid three">
+    <section class="card" id="negatief-jaar">
+      <h3>Uren per jaar</h3>
+      <p class="sub">Het lopende jaar is nog niet volledig.</p>
+      <div class="chart small"><canvas aria-label="Uren met negatieve prijs per jaar"></canvas></div>
+    </section>
+    <section class="card" id="negatief-aandeel">
+      <h3>Aandeel van de tijd</h3>
+      <p class="sub">Percentage van alle uren met een negatieve prijs.</p>
+      <div class="chart small"><canvas aria-label="Aandeel van de tijd met negatieve prijs"></canvas></div>
+    </section>
+    <section class="card" id="negatief-prijs">
+      <h3>Gemiddelde negatieve prijs</h3>
+      <p class="sub">€/MWh, over de uren met een negatieve prijs.</p>
+      <div class="chart small"><canvas aria-label="Gemiddelde negatieve prijs per jaar"></canvas></div>
+    </section>
+    <section class="card wide" id="negatief-maand">
+      <h3>Uren met een negatieve prijs per maand en jaar</h3>
+      <p class="sub">Vooral in de lente en zomer, wanneer veel zonnepanelen tegelijk produceren.</p>
+      <div class="chart"><canvas aria-label="Uren met negatieve prijs per maand en jaar"></canvas></div>
+    </section>
+  </div>
+
+  <h2 class="theme">Zonne-energie <small>België, gemeten PV-productie (Elia)</small></h2>
+  <div class="grid">
+    <section class="card" id="capture">
+      <h3>Solar capture rate per jaar</h3>
+      <p class="sub">Solar capture price gedeeld door de gemiddelde prijs.</p>
+      <div class="chart"><canvas aria-label="Solar capture rate per jaar"></canvas></div>
+    </section>
+    <section class="card" id="capture-maand">
+      <h3>Gemiddelde prijs vs. solar capture price per maand</h3>
+      <p class="sub">€/MWh. Het verschil is de kannibalisatie door zonne-energie.</p>
+      <div class="chart"><canvas aria-label="Gemiddelde prijs en solar capture price per maand"></canvas></div>
+    </section>
+  </div>
+
+  <h2 class="theme">Onbalans <small>Elia, per kwartier, sinds 2024</small></h2>
+  <div class="grid">
+    <section class="card" id="onbalans">
+      <h3>Tekort of overschot?</h3>
+      <p class="sub">Aandeel kwartieren per maand waarin het Belgische net energie tekort of over had.</p>
+      <div class="chart"><canvas aria-label="Aandeel kwartieren tekort en overschot"></canvas></div>
+    </section>
+    <section class="card" id="flex">
+      <h3>Theoretische opbrengst van 1 MW flexibiliteit per maand</h3>
+      <p class="sub">€, bij perfecte voorkennis en zonder verliezen: bijsturen tegen de onbalansprijs in plaats van de day-ahead prijs. Een bovengrens om periodes te vergelijken, geen verwachte projectopbrengst.</p>
+      <div class="chart"><canvas aria-label="Theoretische opbrengst flexibiliteit per maand"></canvas></div>
+    </section>
+  </div>
+
+  <footer>
+    Bronnen: ENTSO-E Transparency Platform (day-ahead), Elia Open Data (onbalans, PV-productie). Berekeningen: <a href="https://www.renewus.be">Renewus</a>.
+    Open data: <a href="https://github.com/kennethgev/belpex-prijzen">github.com/kennethgev/belpex-prijzen</a>. Indicatief, zonder garantie.
+  </footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(() => {
+  // Op GitHub Pages staan de bestanden naast de pagina; elders lezen we ze rechtstreeks van GitHub.
+  const RAW = "https://raw.githubusercontent.com/kennethgev/belpex-prijzen/main/data/";
+
+  const params = new URLSearchParams(location.search);
+  const only = params.get("blok");
+  if (only) {
+    document.body.classList.add("embed");
+    document.querySelectorAll("section.card").forEach(s => { if (s.id !== only) s.remove(); });
+  }
+  if (params.get("thema") === "licht") document.documentElement.dataset.theme = "light";
+  if (params.get("thema") === "donker") document.documentElement.dataset.theme = "dark";
+
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const eur = new Intl.NumberFormat("nl-BE", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+  const eur0 = new Intl.NumberFormat("nl-BE", { maximumFractionDigits: 0 });
+  const int = new Intl.NumberFormat("nl-BE", { maximumFractionDigits: 0 });
+  const pct = new Intl.NumberFormat("nl-BE", { style: "percent", maximumFractionDigits: 0 });
+  const pct1 = new Intl.NumberFormat("nl-BE", { style: "percent", maximumFractionDigits: 1 });
+  const MAANDEN = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
+  const maandLabel = m => `${MAANDEN[+m.slice(5, 7) - 1]} ${m.slice(2, 4)}`;
+
+  async function csv(name) {
+    let r = await fetch("data/" + name, { cache: "no-cache" }).catch(() => null);
+    if (!r || !r.ok) r = await fetch(RAW + name, { cache: "no-cache" });
+    if (!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
+    const [head, ...lines] = (await r.text()).trim().split(/\r?\n/);
+    const cols = head.split(",");
+    return lines.map(l => Object.fromEntries(l.split(",").map((v, i) => [cols[i], v])));
+  }
+  const num = v => (v === "" || v == null ? null : +v);
+
+  // Gemeenschappelijke opmaak: dunne marks, rustige as en raster, tekst in de teksttokens.
+  function opts({ legend = true, stacked = false, y = {}, x = {}, tooltip = {}, extra = {} } = {}) {
+    const text = css("--text-secondary"), grid = css("--grid");
+    return {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: legend, labels: { color: text, boxWidth: 10, boxHeight: 10, useBorderRadius: true, borderRadius: 2, font: { family: css("--font-body") } } },
+        tooltip: { backgroundColor: css("--surface-1"), titleColor: css("--text-primary"), bodyColor: css("--text-body"),
+                   footerColor: css("--text-primary"), borderColor: css("--border"), borderWidth: 1, padding: 10, boxPadding: 4, ...tooltip },
+      },
+      scales: {
+        x: { stacked, ticks: { color: text, maxRotation: 0, autoSkipPadding: 12 }, grid: { display: false }, border: { color: grid }, ...x },
+        y: { stacked, ticks: { color: text }, grid: { color: grid }, border: { display: false }, ...y },
+      },
+      ...extra,
+    };
+  }
+  const bar = (label, data, color, more = {}) => ({ label, data, backgroundColor: color, borderRadius: 3, borderSkipped: "start",
+    categoryPercentage: 0.82, barPercentage: 0.92, borderColor: css("--surface-1"), borderWidth: { left: 1, right: 1 }, ...more });
+  const line = (label, data, color, more = {}) => ({ label, data, borderColor: color, backgroundColor: color, borderWidth: 2,
+    pointRadius: 0, pointHoverRadius: 4, tension: 0.25, ...more });
+
+  const charts = {};
+  function draw(id, config) {
+    const sec = document.getElementById(id);
+    if (!sec) return;
+    charts[id]?.destroy();
+    charts[id] = new Chart(sec.querySelector("canvas"), config);
+  }
+  function addTable(id, head, rows) {
+    const sec = document.getElementById(id);
+    if (!sec) return;
+    sec.querySelector("details")?.remove();
+    const d = document.createElement("details");
+    d.innerHTML = `<summary>Toon als tabel</summary><div class="table-wrap"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${
+      rows.map(r => `<tr>${r.map(c => `<td>${c ?? "–"}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    sec.append(d);
+  }
+  function tile(label, value, note) {
+    const el = document.createElement("div");
+    el.className = "tile";
+    el.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div><div class="note">${note || ""}</div>`;
+    document.getElementById("tiles").append(el);
+  }
+
+  async function render() {
+    const [recent, monthly, yearly, duck, belix, capY, capM] = await Promise.all([
+      csv("dayahead_recent.csv"), csv("dashboard_monthly.csv"), csv("dashboard_yearly.csv"), csv("duck_curve.csv"),
+      csv("belix_monthly.csv"), csv("solar_capture_yearly.csv"), csv("solar_capture_monthly.csv"),
+    ]);
+    const NAVY = css("--brand-navy"), TEAL = css("--brand-teal"), CORAL = css("--brand-coral"), SLATE = css("--brand-slate"), PAST = css("--past");
+    // Vaste kleur per jaar (oud -> nieuw), zodat een jaar overal dezelfde kleur houdt.
+    const lastYear = +yearly[yearly.length - 1].year;
+    const recentYears = [lastYear - 3, lastYear - 2, lastYear - 1, lastYear];
+    const yearColor = y => ({ [lastYear - 3]: SLATE, [lastYear - 2]: TEAL, [lastYear - 1]: NAVY, [lastYear]: CORAL }[y] || PAST);
+
+    // ---- tegels
+    const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Brussels" });
+    const tomorrow = new Date(Date.now() + 864e5).toLocaleDateString("sv-SE", { timeZone: "Europe/Brussels" });
+    const avgDay = d => { const v = recent.filter(r => r.datetime_brussels.startsWith(d)).map(r => +r.price_eur_mwh); return v.length ? v.reduce((a, b) => a + b) / v.length : null; };
+    document.getElementById("tiles").innerHTML = "";
+    const vt = avgDay(today), vm = avgDay(tomorrow);
+    tile("Day-ahead vandaag", vt == null ? "–" : `€ ${eur.format(vt)}`, "daggemiddelde, €/MWh");
+    tile("Day-ahead morgen", vm == null ? "nog niet bekend" : `€ ${eur.format(vm)}`, vm == null ? "gepubliceerd rond 13u" : "daggemiddelde, €/MWh");
+    const lb = belix[belix.length - 1];
+    tile(`Belix ${maandLabel(lb.month)}`, `€ ${eur.format(+lb.belix_eur_mwh)}`, lb.final === "true" ? "definitief" : "voorlopig, lopende maand");
+    const lc = capY[capY.length - 1];
+    tile(`Solar capture rate ${lc.period}`, pct.format(+lc.solar_capture_rate), lc.final === "true" ? "volledig jaar" : "tot nu toe dit jaar");
+    const last = recent[recent.length - 1];
+    document.getElementById("updated").textContent =
+      `Bijgewerkt tot ${new Date(last.datetime_utc).toLocaleString("nl-BE", { timeZone: "Europe/Brussels", dateStyle: "long", timeStyle: "short" })}`;
+
+    // ---- day-ahead laatste week + morgen
+    const times = recent.map(r => new Date(r.datetime_utc));
+    const firstTomorrow = recent.findIndex(r => r.datetime_brussels.startsWith(tomorrow));
+    const fmtTime = d => d.toLocaleString("nl-BE", { timeZone: "Europe/Brussels", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    draw("dayahead", {
+      type: "line",
+      data: { labels: times.map(fmtTime), datasets: [line("Day-ahead", recent.map(r => +r.price_eur_mwh), NAVY, { stepped: true, tension: 0 })] },
+      options: opts({ legend: false, tooltip: { callbacks: { label: c => ` € ${eur.format(c.parsed.y)}/MWh` } },
+        x: { ticks: { color: css("--text-secondary"), maxRotation: 0, maxTicksLimit: 9,
+             callback: (v, i) => times[i].toLocaleDateString("nl-BE", { timeZone: "Europe/Brussels", weekday: "short", day: "numeric" }) } } }),
+      plugins: [{ id: "morgen", afterDraw(chart) {
+        if (firstTomorrow < 0) return;
+        const xp = chart.scales.x.getPixelForValue(firstTomorrow), { top, bottom } = chart.chartArea, ctx = chart.ctx;
+        ctx.save(); ctx.strokeStyle = css("--text-muted"); ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(xp, top); ctx.lineTo(xp, bottom); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = css("--text-secondary"); ctx.font = `12px ${css("--font-body")}`; ctx.fillText("morgen", xp + 4, top + 12); ctx.restore();
+      } }],
+    });
+
+    // ---- gemiddelde per maand en jaar (gegroepeerd)
+    const byMonth = Object.fromEntries(monthly.map(r => [r.month, r]));
+    const mm = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"));
+    draw("maand", {
+      type: "bar",
+      data: { labels: MAANDEN, datasets: recentYears.map(y => bar(String(y), mm.map(m => num(byMonth[`${y}-${m}`]?.dayahead_avg_eur_mwh)), yearColor(y))) },
+      options: opts({ tooltip: { callbacks: { label: c => c.parsed.y == null ? null : ` ${c.dataset.label}: € ${eur.format(c.parsed.y)}` } } }),
+    });
+    addTable("maand", ["Maand", ...recentYears], mm.map((m, i) => [MAANDEN[i], ...recentYears.map(y => byMonth[`${y}-${m}`] ? eur.format(+byMonth[`${y}-${m}`].dayahead_avg_eur_mwh) : null)]));
+
+    // ---- duck curve: recente jaren in kleur, oudere in grijs
+    const duckYears = [...new Set(duck.map(r => +r.year))];
+    const hot = recentYears.slice(1);
+    const hoursLbl = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, "0")}:00`);
+    draw("duck", {
+      type: "line",
+      data: { labels: hoursLbl, datasets: duckYears.map(y => {
+        const vals = hoursLbl.map((_, h) => num(duck.find(r => +r.year === y && +r.hour === h)?.pct_of_daily_max));
+        const isHot = hot.includes(y);
+        return line(String(y), vals.map(v => v == null ? null : 100 * v), isHot ? yearColor(y) : PAST,
+          { borderWidth: isHot ? 2.5 : 1.25, order: isHot ? 0 : 1, pointHoverRadius: isHot ? 4 : 0 });
+      }) },
+      options: opts({
+        y: { min: 0, max: 100, ticks: { color: css("--text-secondary"), callback: v => v + "%" } },
+        tooltip: { filter: c => hot.includes(+c.dataset.label), itemSort: (a, b) => b.datasetIndex - a.datasetIndex,
+          callbacks: { label: c => ` ${c.dataset.label}: ${int.format(c.parsed.y)}% van het dagmaximum` } },
+      }),
+    });
+    // Legende: de drie gekleurde jaren plus één grijs item voor alle eerdere jaren.
+    const legend = charts.duck.options.plugins.legend;
+    legend.onClick = () => {};
+    legend.labels.generateLabels = chart => {
+      const base = Chart.defaults.plugins.legend.labels.generateLabels(chart).filter(l => hot.includes(+l.text));
+      return [{ text: `${duckYears[0]}–${hot[0] - 1}`, fillStyle: PAST, strokeStyle: PAST, lineWidth: 0, fontColor: css("--text-secondary") },
+              ...base.map(l => ({ ...l, fontColor: css("--text-secondary") }))];
+    };
+    charts.duck.update();
+    addTable("duck", ["Uur", ...duckYears], hoursLbl.map((hl, h) => [hl, ...duckYears.map(y => {
+      const r = duck.find(x => +x.year === y && +x.hour === h); return r ? pct.format(+r.pct_of_daily_max) : null; })]));
+
+    // ---- gemiddelde prijs en solar capture price per jaar
+    const capByYear = Object.fromEntries(capY.filter(r => +r.coverage_pct >= 50).map(r => [r.period, r]));
+    draw("jaar", {
+      type: "bar",
+      data: { labels: yearly.map(r => r.year), datasets: [
+        bar("Gemiddelde day-ahead", yearly.map(r => +r.dayahead_avg_eur_mwh), NAVY),
+        bar("Solar capture price", yearly.map(r => num(capByYear[r.year]?.solar_capture_price_eur_mwh)), TEAL),
+      ] },
+      options: opts({ tooltip: { callbacks: { label: c => c.parsed.y == null ? null : ` ${c.dataset.label}: € ${eur.format(c.parsed.y)}` } } }),
+    });
+    addTable("jaar", ["Jaar", "Gemiddelde day-ahead", "Solar capture price"], yearly.slice().reverse().map(r =>
+      [r.year, eur.format(+r.dayahead_avg_eur_mwh), capByYear[r.year] ? eur.format(+capByYear[r.year].solar_capture_price_eur_mwh) : null]));
+
+    // ---- negatieve prijzen
+    const ny = yearly.filter(r => +r.year >= lastYear - 7);
+    draw("negatief-jaar", { type: "bar",
+      data: { labels: ny.map(r => r.year), datasets: [bar("Uren", ny.map(r => +r.negative_price_hours), NAVY)] },
+      options: opts({ legend: false, tooltip: { callbacks: { label: c => ` ${int.format(c.parsed.y)} uur` } } }) });
+    draw("negatief-aandeel", { type: "bar",
+      data: { labels: ny.map(r => r.year), datasets: [bar("Aandeel", ny.map(r => +r.negative_price_pct), TEAL)] },
+      options: opts({ legend: false, y: { ticks: { color: css("--text-secondary"), callback: v => v + "%" } },
+        tooltip: { callbacks: { label: c => ` ${pct1.format(c.parsed.y / 100)} van de tijd` } } }) });
+    draw("negatief-prijs", { type: "bar",
+      data: { labels: ny.map(r => r.year), datasets: [bar("Gemiddelde negatieve prijs", ny.map(r => num(r.negative_price_avg_eur_mwh)), CORAL)] },
+      options: opts({ legend: false, tooltip: { callbacks: { label: c => ` € ${eur.format(c.parsed.y)}/MWh` } } }) });
+    addTable("negatief-jaar", ["Jaar", "Uren", "Aandeel", "Gem. negatieve prijs"], yearly.slice().reverse().map(r =>
+      [r.year, int.format(+r.negative_price_hours), pct1.format(r.negative_price_pct / 100), r.negative_price_avg_eur_mwh ? eur.format(+r.negative_price_avg_eur_mwh) : null]));
+    draw("negatief-maand", {
+      type: "bar",
+      data: { labels: MAANDEN, datasets: recentYears.map(y => bar(String(y), mm.map(m => num(byMonth[`${y}-${m}`]?.negative_price_hours)), yearColor(y))) },
+      options: opts({ tooltip: { callbacks: { label: c => c.parsed.y == null ? null : ` ${c.dataset.label}: ${int.format(c.parsed.y)} uur` } } }),
+    });
+    addTable("negatief-maand", ["Maand", ...recentYears], mm.map((m, i) => [MAANDEN[i], ...recentYears.map(y => byMonth[`${y}-${m}`] ? int.format(+byMonth[`${y}-${m}`].negative_price_hours) : null)]));
+
+    // ---- solar capture rate per jaar
+    const cy = capY.filter(r => +r.coverage_pct >= 50);
+    draw("capture", {
+      type: "bar",
+      data: { labels: cy.map(r => r.final === "true" ? r.period : `${r.period}*`), datasets: [
+        bar("Capture rate", cy.map(r => 100 * r.solar_capture_rate), NAVY),
+        bar("Met afschakelen bij negatieve prijs", cy.map(r => 100 * r.solar_capture_rate_no_negative), TEAL),
+      ] },
+      options: opts({ y: { min: 0, max: 100, ticks: { color: css("--text-secondary"), callback: v => v + "%" } },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${int.format(c.parsed.y)}%` } } }),
+    });
+    addTable("capture", ["Jaar", "Gemiddelde prijs", "Capture price", "Capture rate", "Met afschakelen"], capY.slice().reverse().map(r =>
+      [r.period, eur.format(+r.baseload_eur_mwh), eur.format(+r.solar_capture_price_eur_mwh), pct.format(+r.solar_capture_rate), pct.format(+r.solar_capture_rate_no_negative)]));
+
+    // ---- gemiddelde prijs vs capture price per maand (laatste 3 jaar)
+    const cm = capM.slice(-36);
+    draw("capture-maand", {
+      type: "line",
+      data: { labels: cm.map(r => maandLabel(r.period)), datasets: [
+        line("Gemiddelde day-ahead", cm.map(r => +r.baseload_eur_mwh), NAVY),
+        line("Solar capture price", cm.map(r => +r.solar_capture_price_eur_mwh), TEAL),
+      ] },
+      options: opts({ tooltip: { callbacks: { label: c => ` ${c.dataset.label}: € ${eur.format(c.parsed.y)}` } } }),
+    });
+
+    // ---- onbalans
+    const imb = monthly.filter(r => r.imbalance_short_pct !== "");
+    draw("onbalans", {
+      type: "bar",
+      data: { labels: imb.map(r => maandLabel(r.month)), datasets: [
+        bar("Tekort", imb.map(r => num(r.imbalance_short_pct)), CORAL, { borderWidth: { top: 2 }, borderSkipped: false, borderRadius: 2 }),
+        bar("Overschot", imb.map(r => num(r.imbalance_long_pct)), NAVY, { borderWidth: { top: 2 }, borderSkipped: false, borderRadius: 2 }),
+      ] },
+      options: opts({ stacked: true, y: { min: 0, max: 100, ticks: { color: css("--text-secondary"), callback: v => v + "%" } },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${int.format(c.parsed.y)}% van de kwartieren` } } }),
+    });
+    draw("flex", {
+      type: "bar",
+      data: { labels: imb.map(r => maandLabel(r.month)), datasets: [
+        bar("Extra injecteren", imb.map(r => num(r.flex_revenue_inject_eur_per_mw)), NAVY, { borderWidth: { top: 2 }, borderSkipped: false, borderRadius: 2 }),
+        bar("Extra afnemen", imb.map(r => num(r.flex_revenue_withdraw_eur_per_mw)), TEAL, { borderWidth: { top: 2 }, borderSkipped: false, borderRadius: 2 }),
+      ] },
+      options: opts({ stacked: true, y: { ticks: { color: css("--text-secondary"), callback: v => "€ " + int.format(v / 1000) + "k" } },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: € ${eur0.format(c.parsed.y)}`,
+          footer: items => `Totaal: € ${eur0.format(items.reduce((a, i) => a + i.parsed.y, 0))} per MW` } } }),
+    });
+    addTable("flex", ["Maand", "Tekort", "Overschot", "Gem. onbalansprijs", "Gem. day-ahead", "Opbrengst/MW"], imb.slice().reverse().map(r =>
+      [r.month, r.imbalance_short_pct + "%", r.imbalance_long_pct + "%", eur.format(+r.imbalance_avg_eur_mwh), eur.format(+r.dayahead_avg_imbalance_quarters_eur_mwh),
+       "€ " + eur0.format(+r.flex_revenue_inject_eur_per_mw + +r.flex_revenue_withdraw_eur_per_mw)]));
+  }
+
+  const start = () => render().catch(e => {
+    document.getElementById("updated").innerHTML = `<span class="error">De gegevens konden niet geladen worden (${e.message}). Probeer de pagina later opnieuw.</span>`;
+    console.error(e);
+  });
+  (document.fonts?.ready ?? Promise.resolve()).then(start);
+  // Kleuren volgen het licht/donker-thema van de bezoeker
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", start);
+})();
+</script>
+</body>
+</html>

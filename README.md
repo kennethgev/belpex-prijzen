@@ -14,6 +14,17 @@ Bewaart elke dag automatisch de Belgische elektriciteitsprijzen als CSV-bestande
 | `data/kmi_aws_stations.csv` | Naam, ligging en hoogte van de weerstations | KMI open data |
 | `data/solar_pv_<jaar>.csv` | PV-productie per kwartier voor België, Vlaanderen, Wallonië en Brussel: gemeten, voorspellingen (day-ahead, 11u day-ahead, meest recent), opgevolgd vermogen en belastingsfactor | Elia Open Data |
 
+Website-dashboard:
+
+- `index.html` is een publiek dashboard dat via GitHub Pages draait (`https://kennethgev.github.io/belpex-prijzen/`). Het leest alleen open data uit deze repository.
+- Het gebruikt kleine bestanden die elke dag mee berekend worden:
+  - `data/dashboard_monthly.csv`: maandoverzicht met gemiddelde day-ahead, uren met negatieve prijs, onbalans tekort/overschot en de theoretische opbrengst van 1 MW flexibiliteit.
+  - `data/dashboard_yearly.csv`: jaaroverzicht van de day-ahead prijs en de negatieve prijzen (uren, aandeel van de tijd, gemiddelde negatieve prijs). Een negatieve prijs is hier een prijs onder 0 €/MWh.
+  - `data/duck_curve.csv`: het gemiddelde uurprofiel per jaar, als fractie van de duurste uurprijs van die dag.
+  - `data/dayahead_recent.csv`: de day-ahead prijzen per kwartier van de laatste 7 dagen en morgen.
+- Eén blok apart insluiten kan met `?blok=` en een van deze namen: `dayahead`, `maand`, `duck`, `jaar`, `negatief-jaar`, `negatief-aandeel`, `negatief-prijs`, `negatief-maand`, `capture`, `capture-maand`, `onbalans` of `flex`. Een vast thema kies je met `&thema=licht` of `&thema=donker`.
+- Kleuren en lettertypes volgen de Renewus-huisstijl (navy `#11305F`, turquoise `#04ADAD`, koraal `#F27252`; Montserrat en Open Sans).
+
 Solar capture rate:
 
 - **Capture price** = Σ(PV-productie × day-ahead prijs) / Σ PV-productie, per kwartier. Dat is de gemiddelde marktwaarde van een MWh zonnestroom. Als PV-productie dient de gemeten productie van heel België (Elia). Voor oktober 2025 geldt de uurprijs voor alle vier kwartieren van dat uur.

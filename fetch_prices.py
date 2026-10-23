@@ -378,6 +378,152 @@ CAPTURE_FIELDS = [
 ]
 
 
+def dayahead_quarters():
+    """{begin kwartier (UTC): day-ahead prijs}; een uurprijs geldt voor alle vier de kwartieren."""
+    price = {}
+    for path in sorted(DATA_DIR.glob("dayahead_2*.csv")):
+        for r in read_csv(path):
+            t = datetime.fromisoformat(r["datetime_utc"].replace("Z", "+00:00"))
+            step = int(r["resolution_min"])
+            for k in range(0, step, 15):
+                price.setdefault(t + timedelta(minutes=k), float(r["price_eur_mwh"]))
+    return price
+
+
+DASHBOARD_FIELDS = [
+    "month",
+    "dayahead_avg_eur_mwh",
+    "negative_price_hours",
+    "imbalance_avg_eur_mwh",
+    "dayahead_avg_imbalance_quarters_eur_mwh",
+    "imbalance_short_pct",
+    "imbalance_long_pct",
+    "flex_revenue_inject_eur_per_mw",
+    "flex_revenue_withdraw_eur_per_mw",
+]
+RECENT_FIELDS = ["datetime_utc", "datetime_brussels", "price_eur_mwh"]
+DASHBOARD_YEARLY_FIELDS = ["year", "dayahead_avg_eur_mwh", "negative_price_hours", "negative_price_pct", "negative_price_avg_eur_mwh"]
+DUCK_FIELDS = ["year", "hour", "pct_of_daily_max", "avg_price_eur_mwh"]
+
+
+def compute_dashboard():
+    """Kleine bestanden voor de website: maandoverzicht en de day-ahead prijzen van de laatste dagen."""
+    price = dayahead_quarters()
+    if not price:
+        return
+
+    # Laatste 7 dagen + wat al bekend is van morgen, per kwartier
+    today = datetime.now(BRUSSELS).date()
+    since = local_midnight_utc(today - timedelta(days=7))
+    recent = [
+        {"datetime_utc": iso_utc(t), "datetime_brussels": iso_local(t), "price_eur_mwh": f"{p:g}"}
+        for t, p in sorted(price.items())
+        if t >= since
+    ]
+    write_csv(DATA_DIR / "dayahead_recent.csv", RECENT_FIELDS, recent)
+    log(f"  dayahead_recent.csv: {len(recent)} kwartieren")
+
+    def empty():
+        return {"da_n": 0, "da_sum": 0.0, "neg": 0, "im_n": 0, "im_sum": 0.0, "im_da_sum": 0.0, "short": 0, "long": 0, "inj": 0.0, "wd": 0.0}
+
+    acc = defaultdict(empty)
+    for t, p in price.items():
+        a = acc[t.astimezone(BRUSSELS).strftime("%Y-%m")]
+        a["da_n"] += 1
+        a["da_sum"] += p
+        a["neg"] += p < 0
+    for path in sorted(DATA_DIR.glob("imbalance_*.csv")):
+        for r in read_csv(path):
+            t = datetime.fromisoformat(r["datetime_utc"].replace("Z", "+00:00"))
+            if r["imbalance_price_eur_mwh"] == "" or t not in price:
+                continue
+            ip, dp = float(r["imbalance_price_eur_mwh"]), price[t]
+            a = acc[t.astimezone(BRUSSELS).strftime("%Y-%m")]
+            a["im_n"] += 1
+            a["im_sum"] += ip
+            a["im_da_sum"] += dp
+            if r["system_imbalance_mw"] != "":
+                # Elia: negatieve systeemonbalans = tekort, positief = overschot
+                if float(r["system_imbalance_mw"]) < 0:
+                    a["short"] += 1
+                else:
+                    a["long"] += 1
+            # Theoretische bovengrens voor 1 MW flexibiliteit met perfecte voorkennis
+            if ip > dp:
+                a["inj"] += (ip - dp) / 4
+            else:
+                a["wd"] += (dp - ip) / 4
+
+    rows = []
+    for month, a in sorted(acc.items()):
+        if month < "2015-01":
+            continue
+        n_si = a["short"] + a["long"]
+        rows.append(
+            {
+                "month": month,
+                "dayahead_avg_eur_mwh": f"{a['da_sum'] / a['da_n']:.2f}",
+                "negative_price_hours": f"{a['neg'] / 4:g}",
+                "imbalance_avg_eur_mwh": f"{a['im_sum'] / a['im_n']:.2f}" if a["im_n"] else "",
+                "dayahead_avg_imbalance_quarters_eur_mwh": f"{a['im_da_sum'] / a['im_n']:.2f}" if a["im_n"] else "",
+                "imbalance_short_pct": f"{100 * a['short'] / n_si:.1f}" if n_si else "",
+                "imbalance_long_pct": f"{100 * a['long'] / n_si:.1f}" if n_si else "",
+                "flex_revenue_inject_eur_per_mw": f"{a['inj']:.0f}" if a["im_n"] else "",
+                "flex_revenue_withdraw_eur_per_mw": f"{a['wd']:.0f}" if a["im_n"] else "",
+            }
+        )
+    write_csv(DATA_DIR / "dashboard_monthly.csv", DASHBOARD_FIELDS, rows)
+    log(f"  dashboard_monthly.csv: {len(rows)} maanden")
+
+    # Jaaroverzicht van de day-ahead prijs en de negatieve prijzen
+    years = defaultdict(lambda: {"n": 0, "sum": 0.0, "neg": 0, "neg_sum": 0.0})
+    for t, p in price.items():
+        y = years[t.astimezone(BRUSSELS).year]
+        y["n"] += 1
+        y["sum"] += p
+        if p < 0:
+            y["neg"] += 1
+            y["neg_sum"] += p
+    yearly = [
+        {
+            "year": year,
+            "dayahead_avg_eur_mwh": f"{y['sum'] / y['n']:.2f}",
+            "negative_price_hours": f"{y['neg'] / 4:g}",
+            "negative_price_pct": f"{100 * y['neg'] / y['n']:.2f}",
+            "negative_price_avg_eur_mwh": f"{y['neg_sum'] / y['neg']:.2f}" if y["neg"] else "",
+        }
+        for year, y in sorted(years.items())
+        if year >= 2015
+    ]
+    write_csv(DATA_DIR / "dashboard_yearly.csv", DASHBOARD_YEARLY_FIELDS, yearly)
+    log(f"  dashboard_yearly.csv: {len(yearly)} jaren")
+
+    # Duck curve: gemiddeld uurprofiel per jaar, als fractie van de hoogste uurprijs van die dag
+    hours = defaultdict(list)
+    for t, p in price.items():
+        local = t.astimezone(BRUSSELS)
+        hours[(local.date(), local.hour)].append(p)
+    days = defaultdict(dict)
+    for (d, h), ps in hours.items():
+        days[d][h] = sum(ps) / len(ps)
+    acc_d = defaultdict(lambda: [0.0, 0.0, 0])  # (jaar, uur) -> som fractie, som prijs, aantal
+    for d, by_hour in days.items():
+        top = max(by_hour.values())
+        if d.year < 2015 or top <= 0:
+            continue
+        for h, p in by_hour.items():
+            a = acc_d[(d.year, h)]
+            a[0] += p / top
+            a[1] += p
+            a[2] += 1
+    duck = [
+        {"year": y, "hour": h, "pct_of_daily_max": f"{a[0] / a[2]:.4f}", "avg_price_eur_mwh": f"{a[1] / a[2]:.2f}"}
+        for (y, h), a in sorted(acc_d.items())
+    ]
+    write_csv(DATA_DIR / "duck_curve.csv", DUCK_FIELDS, duck)
+    log(f"  duck_curve.csv: {len(duck)} rijen")
+
+
 def compute_solar_capture():
     """Solar capture price en capture rate van de Belgische PV-productie.
 
@@ -386,13 +532,7 @@ def compute_solar_capture():
     Voor oktober 2025 is de day-ahead prijs per uur; die geldt dan voor elk kwartier.
     De variant "no_negative" gaat ervan uit dat installaties afschakelen bij een negatieve prijs.
     """
-    price = {}
-    for path in sorted(DATA_DIR.glob("dayahead_2*.csv")):
-        for r in read_csv(path):
-            t = datetime.fromisoformat(r["datetime_utc"].replace("Z", "+00:00"))
-            step = int(r["resolution_min"])
-            for k in range(0, step, 15):
-                price.setdefault(t + timedelta(minutes=k), float(r["price_eur_mwh"]))
+    price = dayahead_quarters()
     pv = {}
     for path in sorted(DATA_DIR.glob("solar_pv_*.csv")):
         for r in read_csv(path):
@@ -693,7 +833,7 @@ def run_solar(start, end):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("mode", choices=["daily", "backfill"])
-    p.add_argument("--source", choices=["all", "dayahead", "imbalance", "weather", "aws", "solar", "capture"], default="all")
+    p.add_argument("--source", choices=["all", "dayahead", "imbalance", "weather", "aws", "solar", "capture", "dashboard"], default="all")
     p.add_argument("--start", type=date.fromisoformat, help="eerste dag (JJJJ-MM-DD), Brusselse tijd")
     p.add_argument("--end", type=date.fromisoformat, help="dag na de laatste dag (standaard: overmorgen)")
     args = p.parse_args()
@@ -722,11 +862,16 @@ def main():
         "solar": lambda: run_solar(pv_start, until_today),
         # Rekent op de dayahead- en solar-bestanden die al in data/ staan.
         "capture": compute_solar_capture,
+        "dashboard": compute_dashboard,
+    }
+    depends = {
+        "capture": ("dayahead", "solar", "capture"),
+        "dashboard": ("dayahead", "imbalance", "dashboard"),
     }
     # Een storing bij één bron mag de andere niet tegenhouden.
     failed = []
     for name, job in jobs.items():
-        wanted = (name,) if name != "capture" else ("dayahead", "solar", "capture")
+        wanted = depends.get(name, (name,))
         if args.source != "all" and args.source not in wanted:
             continue
         try:
