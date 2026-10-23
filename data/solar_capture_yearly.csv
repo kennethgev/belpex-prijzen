@@ -1,0 +1,8 @@
+period,baseload_eur_mwh,solar_capture_price_eur_mwh,solar_capture_rate,solar_capture_price_no_negative_eur_mwh,solar_capture_rate_no_negative,solar_energy_mwh,solar_energy_negative_price_pct,negative_price_quarters,quarters,coverage_pct,final
+2020,42.25,43.25,1.0237,43.25,1.0237,371395,0.00,68,8836,25.1,true
+2021,104.12,76.78,0.7374,81.46,0.7823,4677962,4.49,636,35040,100.0,true
+2022,244.57,225.02,0.9201,236.65,0.9676,6419800,4.29,448,34994,99.9,true
+2023,97.26,76.21,0.7835,81.58,0.8388,7194358,5.26,887,34736,99.1,true
+2024,70.30,39.11,0.5563,52.61,0.7485,8325879,18.76,1616,34848,99.2,true
+2025,82.57,42.35,0.5129,60.84,0.7368,10200057,23.27,2081,35040,100.0,true
+2026,112.29,62.40,0.5557,79.48,0.7078,10753939,15.83,1224,28316,80.8,false
