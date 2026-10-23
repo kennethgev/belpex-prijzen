@@ -362,6 +362,110 @@ def compute_belix():
         log(f"  belix_monthly.csv: {len(rows)} maanden")
 
 
+CAPTURE_FIELDS = [
+    "period",
+    "baseload_eur_mwh",
+    "solar_capture_price_eur_mwh",
+    "solar_capture_rate",
+    "solar_capture_price_no_negative_eur_mwh",
+    "solar_capture_rate_no_negative",
+    "solar_energy_mwh",
+    "solar_energy_negative_price_pct",
+    "negative_price_quarters",
+    "quarters",
+    "coverage_pct",
+    "final",
+]
+
+
+def compute_solar_capture():
+    """Solar capture price en capture rate van de Belgische PV-productie.
+
+    capture price = som(PV x prijs) / som(PV), per kwartier
+    capture rate  = capture price / baseload (gewoon gemiddelde van de prijs)
+    Voor oktober 2025 is de day-ahead prijs per uur; die geldt dan voor elk kwartier.
+    De variant "no_negative" gaat ervan uit dat installaties afschakelen bij een negatieve prijs.
+    """
+    price = {}
+    for path in sorted(DATA_DIR.glob("dayahead_2*.csv")):
+        for r in read_csv(path):
+            t = datetime.fromisoformat(r["datetime_utc"].replace("Z", "+00:00"))
+            step = int(r["resolution_min"])
+            for k in range(0, step, 15):
+                price.setdefault(t + timedelta(minutes=k), float(r["price_eur_mwh"]))
+    pv = {}
+    for path in sorted(DATA_DIR.glob("solar_pv_*.csv")):
+        for r in read_csv(path):
+            if r["region"] == "Belgium" and r["measured_mw"] != "":
+                pv[datetime.fromisoformat(r["datetime_utc"].replace("Z", "+00:00"))] = float(r["measured_mw"])
+    if not price or not pv:
+        return
+
+    def empty():
+        return {"n": 0, "p": 0.0, "e": 0.0, "pe": 0.0, "e_pos": 0.0, "pe_pos": 0.0, "e_neg": 0.0, "neg": 0}
+
+    acc = {"month": defaultdict(empty), "year": defaultdict(empty)}
+    for t, p in price.items():
+        if t not in pv:
+            continue  # alleen kwartieren waarvoor beide bekend zijn
+        mwh = pv[t] / 4
+        local = t.astimezone(BRUSSELS)
+        for kind, key in (("month", local.strftime("%Y-%m")), ("year", local.strftime("%Y"))):
+            a = acc[kind][key]
+            a["n"] += 1
+            a["p"] += p
+            a["e"] += mwh
+            a["pe"] += mwh * p
+            if p < 0:
+                a["neg"] += 1
+                a["e_neg"] += mwh
+            else:
+                a["e_pos"] += mwh
+                a["pe_pos"] += mwh * p
+
+    today = datetime.now(BRUSSELS).date()
+
+    def bounds(kind, key):
+        if kind == "year":
+            y = int(key)
+            return date(y, 1, 1), date(y + 1, 1, 1)
+        y, m = map(int, key.split("-"))
+        return date(y, m, 1), date(y + (m == 12), m % 12 + 1, 1)
+
+    def quarters_in(kind, key):
+        first, nxt = bounds(kind, key)
+        return (local_midnight_utc(nxt) - local_midnight_utc(first)).total_seconds() / 900
+
+    for kind, name in (("month", "solar_capture_monthly.csv"), ("year", "solar_capture_yearly.csv")):
+        rows = []
+        for key, a in sorted(acc[kind].items()):
+            if a["e"] <= 0:
+                continue
+            base = a["p"] / a["n"]
+            cap = a["pe"] / a["e"]
+            cap_pos = a["pe_pos"] / a["e_pos"] if a["e_pos"] else 0.0
+            rows.append(
+                {
+                    "period": key,
+                    "baseload_eur_mwh": f"{base:.2f}",
+                    "solar_capture_price_eur_mwh": f"{cap:.2f}",
+                    "solar_capture_rate": f"{cap / base:.4f}" if base else "",
+                    "solar_capture_price_no_negative_eur_mwh": f"{cap_pos:.2f}",
+                    "solar_capture_rate_no_negative": f"{cap_pos / base:.4f}" if base else "",
+                    "solar_energy_mwh": f"{a['e']:.0f}",
+                    "solar_energy_negative_price_pct": f"{100 * a['e_neg'] / a['e']:.2f}",
+                    "negative_price_quarters": a["neg"],
+                    "quarters": a["n"],
+                    # Elia mist soms enkele dagen meetdata; zie dekking.
+                    "coverage_pct": f"{100 * a['n'] / quarters_in(kind, key):.1f}",
+                    # Definitief zodra de periode voorbij is.
+                    "final": str(bounds(kind, key)[1] <= today).lower(),
+                }
+            )
+        write_csv(DATA_DIR / name, CAPTURE_FIELDS, rows)
+        log(f"  {name}: {len(rows)} perioden")
+
+
 def run_dayahead(start, end):
     token = os.environ.get("ENTSOE_TOKEN", "").strip()
     if not token:
@@ -589,7 +693,7 @@ def run_solar(start, end):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("mode", choices=["daily", "backfill"])
-    p.add_argument("--source", choices=["all", "dayahead", "imbalance", "weather", "aws", "solar"], default="all")
+    p.add_argument("--source", choices=["all", "dayahead", "imbalance", "weather", "aws", "solar", "capture"], default="all")
     p.add_argument("--start", type=date.fromisoformat, help="eerste dag (JJJJ-MM-DD), Brusselse tijd")
     p.add_argument("--end", type=date.fromisoformat, help="dag na de laatste dag (standaard: overmorgen)")
     args = p.parse_args()
@@ -616,11 +720,14 @@ def main():
         "weather": run_weather,
         "aws": lambda: run_aws(aws_start, until_today),
         "solar": lambda: run_solar(pv_start, until_today),
+        # Rekent op de dayahead- en solar-bestanden die al in data/ staan.
+        "capture": compute_solar_capture,
     }
     # Een storing bij één bron mag de andere niet tegenhouden.
     failed = []
     for name, job in jobs.items():
-        if args.source not in ("all", name):
+        wanted = (name,) if name != "capture" else ("dayahead", "solar", "capture")
+        if args.source != "all" and args.source not in wanted:
             continue
         try:
             job()

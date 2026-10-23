@@ -7,11 +7,22 @@ Bewaart elke dag automatisch de Belgische elektriciteitsprijzen als CSV-bestande
 | `data/dayahead_<jaar>.csv` | Day-ahead prijzen (Belpex/EPEX) in hun eigen resolutie: per uur tot oktober 2025, daarna per kwartier | ENTSO-E |
 | `data/dayahead_hourly_<jaar>.csv` | Day-ahead uurprijzen. Sinds de kwartiermarkt is dit het gemiddelde van de vier kwartieren | berekend |
 | `data/belix_monthly.csv` | **Belix**: maandgemiddelde van de Belpex day-ahead prijs. `final` = `true` zodra alle uren van de maand bekend zijn. Komt op 0,01 € na overeen met de Belix van Elexys. | berekend |
+| `data/solar_capture_monthly.csv`, `data/solar_capture_yearly.csv` | **Solar capture price en capture rate** per maand en per jaar, sinds oktober 2020 (zie hieronder) | berekend |
 | `data/imbalance_<jaar>.csv` | Onbalansprijzen per kwartier, met systeemonbalans en kwaliteitsstatus | Elia Open Data |
 | `data/weer_ukkel_<jaar>.csv` | Dagwaarnemingen in Ukkel: temperatuur (max, min, gemiddeld) in °C, neerslag in mm, wind in m/s, zonneschijn (uu:mm en in minuten) | KMI |
 | `data/kmi_aws_hourly_<jaar>.csv` | Uurwaarden van alle automatische KMI-weerstations: gemeten **globale instraling** (`global_radiation_wm2`, W/m²), temperatuur, vochtigheid, luchtdruk, neerslag, wind, zonneduur | KMI open data |
 | `data/kmi_aws_stations.csv` | Naam, ligging en hoogte van de weerstations | KMI open data |
 | `data/solar_pv_<jaar>.csv` | PV-productie per kwartier voor België, Vlaanderen, Wallonië en Brussel: gemeten, voorspellingen (day-ahead, 11u day-ahead, meest recent), opgevolgd vermogen en belastingsfactor | Elia Open Data |
+
+Solar capture rate:
+
+- **Capture price** = Σ(PV-productie × day-ahead prijs) / Σ PV-productie, per kwartier. Dat is de gemiddelde marktwaarde van een MWh zonnestroom. Als PV-productie dient de gemeten productie van heel België (Elia). Voor oktober 2025 geldt de uurprijs voor alle vier kwartieren van dat uur.
+- **Baseload** = het gewone gemiddelde van de day-ahead prijs over dezelfde kwartieren.
+- **Capture rate** = capture price / baseload. Bij 0,51 is een MWh zonnestroom 51 % van een gemiddelde MWh waard.
+- De variant **`_no_negative`** veronderstelt dat installaties afschakelen bij een negatieve prijs: die kwartieren tellen dan niet mee.
+- `solar_energy_negative_price_pct`: het deel van de zonne-energie dat geproduceerd werd tijdens een negatieve prijs.
+- `coverage_pct`: het deel van de kwartieren waarvoor zowel prijs als PV-meting bestaat. Elia mist soms enkele dagen. 2020 begint pas in oktober.
+- Het bestand wordt bij elke dagelijkse run herberekend.
 
 Opmerkingen bij de nieuwe bronnen:
 
