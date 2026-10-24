@@ -8,6 +8,8 @@ Bewaart elke dag automatisch de Belgische elektriciteitsprijzen als CSV-bestande
 | `data/dayahead_hourly_<jaar>.csv` | Day-ahead uurprijzen. Sinds de kwartiermarkt is dit het gemiddelde van de vier kwartieren | berekend |
 | `data/belix_monthly.csv` | **Belix**: maandgemiddelde van de Belpex day-ahead prijs. `final` = `true` zodra alle uren van de maand bekend zijn. Komt op 0,01 € na overeen met de Belix van Elexys. | berekend |
 | `data/solar_capture_monthly.csv`, `data/solar_capture_yearly.csv` | **Solar capture price en capture rate** per maand en per jaar, sinds oktober 2020 (zie hieronder) | berekend |
+| `data/gas_worldbank_monthly.csv` | Groothandelsprijs aardgas Europa (TTF) per maand sinds 1999: in $/MMBtu, de maandkoers USD/EUR en omgerekend in €/MWh | Wereldbank Pink Sheet (CC BY 4.0) + ECB |
+| `data/gas_eurostat_nonhousehold.csv` | Gasprijs voor bedrijven in België per halfjaar sinds 2008, per verbruiksklasse (I1–I3), zonder taksen (`X_TAX`) en zonder btw (`X_VAT`), in €/MWh | Eurostat (nrg_pc_203) |
 | `data/imbalance_<jaar>.csv` | Onbalansprijzen per kwartier, met systeemonbalans en kwaliteitsstatus | Elia Open Data |
 | `data/weer_ukkel_<jaar>.csv` | Dagwaarnemingen in Ukkel: temperatuur (max, min, gemiddeld) in °C, neerslag in mm, wind in m/s, zonneschijn (uu:mm en in minuten) | KMI |
 | `data/kmi_aws_hourly_<jaar>.csv` | Uurwaarden van alle automatische KMI-weerstations: gemeten **globale instraling** (`global_radiation_wm2`, W/m²), temperatuur, vochtigheid, luchtdruk, neerslag, wind, zonneduur | KMI open data |
@@ -22,7 +24,7 @@ Website-dashboard:
   - `data/dashboard_yearly.csv`: jaaroverzicht van de day-ahead prijs en de negatieve prijzen (uren, aandeel van de tijd, gemiddelde negatieve prijs). Een negatieve prijs is hier een prijs onder 0 €/MWh.
   - `data/duck_curve.csv`: het gemiddelde uurprofiel per jaar, als fractie van de duurste uurprijs van die dag.
   - `data/dayahead_recent.csv`: de day-ahead prijzen per kwartier van de laatste 7 dagen en morgen.
-- Eén blok apart insluiten kan met `?blok=` en een van deze namen: `dayahead`, `maand`, `duck`, `jaar`, `negatief-jaar`, `negatief-aandeel`, `negatief-prijs`, `negatief-maand`, `capture`, `capture-maand`, `onbalans` of `flex`. Een vast thema kies je met `&thema=licht` of `&thema=donker`.
+- Eén blok apart insluiten kan met `?blok=` en een van deze namen: `dayahead`, `maand`, `duck`, `jaar`, `negatief-jaar`, `negatief-aandeel`, `negatief-prijs`, `negatief-maand`, `gas`, `gas-bedrijf`, `capture`, `capture-maand`, `onbalans` of `flex`. Een vast thema kies je met `&thema=licht` of `&thema=donker`.
 - Kleuren en lettertypes volgen de Renewus-huisstijl (navy `#11305F`, turquoise `#04ADAD`, koraal `#F27252`; Montserrat en Open Sans).
 
 Solar capture rate:

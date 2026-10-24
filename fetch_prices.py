@@ -8,6 +8,8 @@ Bronnen:
   - Uurwaarden van de automatische weerstations (AWS) van het KMI, met
     globale instraling: KMI open data (geen sleutel nodig).
   - PV-productie België per kwartier (gemeten en voorspeld): Elia Open Data.
+  - Gasprijzen uit open bronnen: Wereldbank (Europa/TTF, maandelijks) en Eurostat
+    (bedrijven in België, per halfjaar).
 
 Gebruik:
   python fetch_prices.py daily
@@ -16,6 +18,7 @@ Gebruik:
   python fetch_prices.py backfill --source aws --start 2015-01-01
   python fetch_prices.py backfill --source solar --start 2020-10-01
   python fetch_prices.py daily --source weather
+  python fetch_prices.py daily --source gas
 """
 
 import argparse
@@ -827,13 +830,98 @@ def run_solar(start, end):
             merge_into_year_files("solar_pv", PV_FIELDS, rows, key=lambda r: (r["datetime_utc"], r["region"]))
 
 
+# ---------------------------------------------------------------- open gasprijzen
+
+WB_PAGE = "https://www.worldbank.org/en/research/commodity-markets"
+ECB_USD = "https://data-api.ecb.europa.eu/service/data/EXR/M.USD.EUR.SP00.A"
+EUROSTAT_GAS = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/nrg_pc_203"
+MWH_PER_MMBTU = 0.293071
+GAS_WB_FIELDS = ["month", "price_usd_mmbtu", "usd_per_eur", "price_eur_mwh"]
+GAS_EU_FIELDS = ["period", "band", "band_label", "tax", "price_eur_mwh"]
+# Verbruiksklassen die voor KMO's relevant zijn (1 GJ = 0,2778 MWh)
+GAS_BANDS = {
+    "GJ_LT1000": "I1: < 278 MWh/jaar",
+    "GJ1000-9999": "I2: 278 – 2.778 MWh/jaar",
+    "GJ10000-99999": "I3: 2.778 – 27.778 MWh/jaar",
+}
+
+
+def run_gas_open():
+    """Gasprijzen uit open bronnen die publiek getoond mogen worden (met bronvermelding).
+
+    - Wereldbank Pink Sheet, "Natural gas, Europe" (TTF), maandelijks, CC BY 4.0;
+      omgerekend naar €/MWh met de maandkoers van de ECB.
+    - Eurostat nrg_pc_203: gasprijs voor niet-huishoudelijke verbruikers in België, per halfjaar.
+    """
+    import io
+
+    import openpyxl
+
+    log("Gasprijs (Wereldbank + ECB)")
+    page = get(WB_PAGE, {}).text
+    m = re.search(r'https://thedocs\.worldbank\.org/[^"\']*CMO-Historical-Data-Monthly\.xlsx', page)
+    if not m:
+        raise RuntimeError("link naar de Wereldbank Pink Sheet niet gevonden")
+    wb = openpyxl.load_workbook(io.BytesIO(get(m.group(0), {}).content), read_only=True, data_only=True)
+    rows = list(wb["Monthly Prices"].iter_rows(values_only=True))
+    header = next(r for r in rows if r and any(isinstance(c, str) and c.startswith("Natural gas, Europe") for c in r))
+    col = next(i for i, c in enumerate(header) if isinstance(c, str) and c.startswith("Natural gas, Europe"))
+    usd = {}
+    ecb = csv.DictReader(io.StringIO(get(ECB_USD, {"format": "csvdata", "startPeriod": "1999-01"}).text))
+    for r in ecb:
+        if r.get("OBS_VALUE"):
+            usd[r["TIME_PERIOD"]] = float(r["OBS_VALUE"])
+    out = []
+    for r in rows:
+        if not (r and isinstance(r[0], str) and re.fullmatch(r"\d{4}M\d{2}", r[0])) or r[col] in (None, ""):
+            continue
+        month = f"{r[0][:4]}-{r[0][5:]}"
+        rate = usd.get(month)
+        if not rate:
+            continue  # voor 1999 of de koers is nog niet gepubliceerd
+        out.append({
+            "month": month,
+            "price_usd_mmbtu": f"{float(r[col]):.3f}",
+            "usd_per_eur": f"{rate:.4f}",
+            "price_eur_mwh": f"{float(r[col]) / MWH_PER_MMBTU / rate:.2f}",
+        })
+    if not out:
+        raise RuntimeError("geen Wereldbank-gasprijzen gevonden")
+    write_csv(DATA_DIR / "gas_worldbank_monthly.csv", GAS_WB_FIELDS, out)
+    log(f"  gas_worldbank_monthly.csv: {len(out)} maanden, laatste {out[-1]['month']}")
+
+    log("Gasprijs bedrijven België (Eurostat)")
+    d = get(EUROSTAT_GAS, {"geo": "BE", "currency": "EUR", "unit": "KWH", "format": "JSON", "lang": "en"}).json()
+    dims, sizes = d["id"], d["size"]
+    index = {k: d["dimension"][k]["category"]["index"] for k in dims}
+    rev = {k: {v: c for c, v in idx.items()} for k, idx in index.items()}
+    rows_eu = []
+    for flat, value in d["value"].items():
+        flat, pos = int(flat), {}
+        for k, n in zip(reversed(dims), reversed(sizes)):
+            pos[k] = rev[k][flat % n]
+            flat //= n
+        # Methodebreuk in 2007-S2; we tonen vanaf 2008.
+        if pos["nrg_cons"] in GAS_BANDS and pos["tax"] in ("X_TAX", "X_VAT") and pos["time"] >= "2008":
+            rows_eu.append({
+                "period": pos["time"],
+                "band": pos["nrg_cons"],
+                "band_label": GAS_BANDS[pos["nrg_cons"]],
+                "tax": pos["tax"],
+                "price_eur_mwh": f"{value * 1000:.2f}",
+            })
+    rows_eu.sort(key=lambda r: (r["period"], r["band"], r["tax"]))
+    write_csv(DATA_DIR / "gas_eurostat_nonhousehold.csv", GAS_EU_FIELDS, rows_eu)
+    log(f"  gas_eurostat_nonhousehold.csv: {len(rows_eu)} rijen, laatste {rows_eu[-1]['period'] if rows_eu else '-'}")
+
+
 # ---------------------------------------------------------------- main
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("mode", choices=["daily", "backfill"])
-    p.add_argument("--source", choices=["all", "dayahead", "imbalance", "weather", "aws", "solar", "capture", "dashboard"], default="all")
+    p.add_argument("--source", choices=["all", "dayahead", "imbalance", "weather", "aws", "solar", "capture", "dashboard", "gas"], default="all")
     p.add_argument("--start", type=date.fromisoformat, help="eerste dag (JJJJ-MM-DD), Brusselse tijd")
     p.add_argument("--end", type=date.fromisoformat, help="dag na de laatste dag (standaard: overmorgen)")
     args = p.parse_args()
@@ -863,6 +951,7 @@ def main():
         # Rekent op de dayahead- en solar-bestanden die al in data/ staan.
         "capture": compute_solar_capture,
         "dashboard": compute_dashboard,
+        "gas": run_gas_open,
     }
     depends = {
         "capture": ("dayahead", "solar", "capture"),

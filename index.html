@@ -152,6 +152,21 @@
     </section>
   </div>
 
+  <h2 class="theme">Gasprijs <small>€/MWh</small></h2>
+  <div class="grid">
+    <section class="card wide" id="gas">
+      <h3>Groothandelsprijs aardgas in Europa per maand</h3>
+      <p class="sub">TTF-gebaseerde maandprijs van de Wereldbank, omgerekend naar €/MWh met de maandkoers van de ECB.</p>
+      <div class="controls" data-range></div>
+      <div class="chart"><canvas aria-label="Groothandelsprijs aardgas Europa per maand"></canvas></div>
+    </section>
+    <section class="card wide" id="gas-bedrijf">
+      <h3>Gasprijs voor bedrijven in België</h3>
+      <p class="sub">Wat een bedrijf betaalt, zonder btw, per halfjaar en per jaarverbruik (Eurostat). Deze cijfers verschijnen enkele maanden na afloop van het halfjaar.</p>
+      <div class="chart"><canvas aria-label="Gasprijs voor bedrijven in België per halfjaar"></canvas></div>
+    </section>
+  </div>
+
   <h2 class="theme">Negatieve prijzen <small>day-ahead prijs onder 0 €/MWh</small></h2>
   <div class="grid three">
     <section class="card" id="negatief-jaar">
@@ -205,7 +220,7 @@
   </div>
 
   <footer>
-    Bronnen: ENTSO-E Transparency Platform (day-ahead), Elia Open Data (onbalans, PV-productie). Berekeningen: <a href="https://www.renewus.be">Renewus</a>.
+    Bronnen: ENTSO-E Transparency Platform (day-ahead), Elia Open Data (onbalans, PV-productie), Wereldbank Commodity Price Data (Pink Sheet, CC BY 4.0) en ECB (gasprijs Europa), Eurostat (gasprijs bedrijven). Berekeningen: <a href="https://www.renewus.be">Renewus</a>.
     Open data: <a href="https://github.com/kennethgev/belpex-prijzen">github.com/kennethgev/belpex-prijzen</a>. Indicatief, zonder garantie.
   </footer>
 </main>
@@ -291,9 +306,10 @@
   }
 
   async function render() {
-    const [recent, monthly, yearly, duck, belix, capY, capM] = await Promise.all([
+    const [recent, monthly, yearly, duck, belix, capY, capM, gasWb, gasEu] = await Promise.all([
       csv("dayahead_recent.csv"), csv("dashboard_monthly.csv"), csv("dashboard_yearly.csv"), csv("duck_curve.csv"),
       csv("belix_monthly.csv"), csv("solar_capture_yearly.csv"), csv("solar_capture_monthly.csv"),
+      csv("gas_worldbank_monthly.csv"), csv("gas_eurostat_nonhousehold.csv"),
     ]);
     const NAVY = css("--brand-navy"), TEAL = css("--brand-teal"), CORAL = css("--brand-coral"), SLATE = css("--brand-slate"), PAST = css("--past");
     // Vaste kleur per jaar (oud -> nieuw), zodat een jaar overal dezelfde kleur houdt.
@@ -311,6 +327,11 @@
     tile("Day-ahead morgen", vm == null ? "nog niet bekend" : `€ ${eur.format(vm)}`, vm == null ? "gepubliceerd rond 13u" : "daggemiddelde, €/MWh");
     const lb = belix[belix.length - 1];
     tile(`Belix ${maandLabel(lb.month)}`, `€ ${eur.format(+lb.belix_eur_mwh)}`, lb.final === "true" ? "definitief" : "voorlopig, lopende maand");
+    const lg = gasWb[gasWb.length - 1];
+    const gYear = gasWb.find(r => r.month === `${+lg.month.slice(0, 4) - 1}${lg.month.slice(4)}`);
+    const gChange = gYear ? lg.price_eur_mwh / gYear.price_eur_mwh - 1 : null;
+    tile(`Gasprijs Europa ${maandLabel(lg.month)}`, `€ ${eur.format(+lg.price_eur_mwh)}`,
+      gChange == null ? "€/MWh" : `${gChange >= 0 ? "+" : "−"}${pct.format(Math.abs(gChange))} t.o.v. een jaar eerder`);
     const lc = capY[capY.length - 1];
     tile(`Solar capture rate ${lc.period}`, pct.format(+lc.solar_capture_rate), lc.final === "true" ? "volledig jaar" : "tot nu toe dit jaar");
     const last = recent[recent.length - 1];
@@ -389,8 +410,58 @@
     addTable("jaar", ["Jaar", "Gemiddelde day-ahead", "Solar capture price"], yearly.slice().reverse().map(r =>
       [r.year, eur.format(+r.dayahead_avg_eur_mwh), capByYear[r.year] ? eur.format(+capByYear[r.year].solar_capture_price_eur_mwh) : null]));
 
+    // ---- gasprijs Europa (Wereldbank)
+    const gasRange = document.querySelector("#gas [data-range]");
+    const renderGas = n => {
+      const rows = n ? gasWb.slice(-n) : gasWb;
+      draw("gas", {
+        type: "line",
+        data: { labels: rows.map(r => maandLabel(r.month)), datasets: [line("Gasprijs Europa", rows.map(r => +r.price_eur_mwh), NAVY,
+          { fill: { target: "origin" }, backgroundColor: NAVY + "1f" })] },
+        options: opts({ legend: false, y: { min: 0, ticks: { color: css("--text-secondary"), callback: v => "€ " + int.format(v) } },
+          tooltip: { callbacks: {
+            label: c => ` € ${eur.format(c.parsed.y)}/MWh`,
+            afterLabel: c => {
+              const r = rows[c.dataIndex], prev = gasWb.find(x => x.month === `${+r.month.slice(0, 4) - 1}${r.month.slice(4)}`);
+              if (!prev) return "";
+              const ch = r.price_eur_mwh / prev.price_eur_mwh - 1;
+              return ` ${ch >= 0 ? "+" : "−"}${pct.format(Math.abs(ch))} t.o.v. een jaar eerder`;
+            } } } }),
+      });
+    };
+    if (gasRange) {
+      gasRange.innerHTML = "";
+      [["3 jaar", 36], ["10 jaar", 120], ["Sinds 1999", 0]].forEach(([label, n], i) => {
+        const b = document.createElement("button");
+        b.textContent = label;
+        b.setAttribute("aria-pressed", i === 0);
+        b.onclick = () => { gasRange.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); renderGas(n); };
+        gasRange.append(b);
+      });
+    }
+    renderGas(36);
+    addTable("gas", ["Maand", "€/MWh", "$/MMBtu", "USD per EUR"], gasWb.slice().reverse().map(r =>
+      [r.month, eur.format(+r.price_eur_mwh), eur.format(+r.price_usd_mmbtu), r.usd_per_eur.replace(".", ",")]));
+
+    // ---- gasprijs bedrijven België (Eurostat, zonder btw)
+    const euRows = gasEu.filter(r => r.tax === "X_VAT");
+    const periods = [...new Set(euRows.map(r => r.period))].sort();
+    const bands = [["GJ_LT1000", NAVY], ["GJ1000-9999", TEAL], ["GJ10000-99999", CORAL]];
+    const semLabel = p => `${p.slice(0, 4)} ${p.endsWith("S1") ? "H1" : "H2"}`;
+    draw("gas-bedrijf", {
+      type: "line",
+      data: { labels: periods.map(semLabel), datasets: bands.map(([band, color]) => {
+        const lbl = euRows.find(r => r.band === band)?.band_label ?? band;
+        return line(lbl, periods.map(p => num(euRows.find(r => r.period === p && r.band === band)?.price_eur_mwh)), color, { tension: 0, pointRadius: 2 });
+      }) },
+      options: opts({ y: { min: 0, ticks: { color: css("--text-secondary"), callback: v => "€ " + int.format(v) } },
+        tooltip: { callbacks: { label: c => c.parsed.y == null ? null : ` ${c.dataset.label}: € ${eur.format(c.parsed.y)}/MWh` } } }),
+    });
+    addTable("gas-bedrijf", ["Halfjaar", ...bands.map(([b]) => euRows.find(r => r.band === b)?.band_label ?? b)], periods.slice().reverse().map(p =>
+      [semLabel(p), ...bands.map(([b]) => { const r = euRows.find(x => x.period === p && x.band === b); return r ? eur.format(+r.price_eur_mwh) : null; })]));
+
     // ---- negatieve prijzen
-    const ny = yearly.filter(r => +r.year >= lastYear - 7);
+    const ny =yearly.filter(r => +r.year >= lastYear - 7);
     draw("negatief-jaar", { type: "bar",
       data: { labels: ny.map(r => r.year), datasets: [bar("Uren", ny.map(r => +r.negative_price_hours), NAVY)] },
       options: opts({ legend: false, tooltip: { callbacks: { label: c => ` ${int.format(c.parsed.y)} uur` } } }) });
