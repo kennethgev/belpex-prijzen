@@ -79,7 +79,7 @@
   header h1 { font-size: 1.75rem; margin: 0 0 4px; font-weight: 700; }
   header p { margin: 0; color: var(--text-secondary); max-width: 65ch; }
   .updated { color: var(--text-muted); font-size: 0.85rem; margin-top: 6px; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 22px 0 8px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 22px 0 8px; }
   .tile { background: var(--surface-1); border-radius: 8px; padding: 14px 16px; border-top: 3px solid var(--brand-teal); }
   .tile .label { color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
   .tile .value { font-family: var(--font-display); color: var(--text-primary); font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
@@ -386,14 +386,16 @@
       }),
     });
     // Legende: de drie gekleurde jaren plus één grijs item voor alle eerdere jaren.
-    const legend = charts.duck.options.plugins.legend;
-    legend.onClick = () => {};
-    legend.labels.generateLabels = chart => {
-      const base = Chart.defaults.plugins.legend.labels.generateLabels(chart).filter(l => hot.includes(+l.text));
-      return [{ text: `${duckYears[0]}–${hot[0] - 1}`, fillStyle: PAST, strokeStyle: PAST, lineWidth: 0, fontColor: css("--text-secondary") },
-              ...base.map(l => ({ ...l, fontColor: css("--text-secondary") }))];
-    };
-    charts.duck.update();
+    if (charts.duck) {
+      const legend = charts.duck.options.plugins.legend;
+      legend.onClick = () => {};
+      legend.labels.generateLabels = chart => {
+        const base = Chart.defaults.plugins.legend.labels.generateLabels(chart).filter(l => hot.includes(+l.text));
+        return [{ text: `${duckYears[0]}–${hot[0] - 1}`, fillStyle: PAST, strokeStyle: PAST, lineWidth: 0, fontColor: css("--text-secondary") },
+                ...base.map(l => ({ ...l, fontColor: css("--text-secondary") }))];
+      };
+      charts.duck.update();
+    }
     addTable("duck", ["Uur", ...duckYears], hoursLbl.map((hl, h) => [hl, ...duckYears.map(y => {
       const r = duck.find(x => +x.year === y && +x.hour === h); return r ? pct.format(+r.pct_of_daily_max) : null; })]));
 
