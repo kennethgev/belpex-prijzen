@@ -539,6 +539,21 @@
     console.error(e);
   });
   (document.fonts?.ready ?? Promise.resolve()).then(start);
+
+  // Ingesloten op een andere site (iframe): meld de hoogte van de pagina, zodat die site
+  // het kader precies passend kan maken, ook als de grafieken op een gsm onder elkaar komen.
+  if (window.parent !== window) {
+    let last = 0;
+    const report = () => {
+      const h = Math.ceil(document.documentElement.getBoundingClientRect().height);
+      if (h && h !== last) {
+        last = h;
+        window.parent.postMessage({ type: "renewus-dashboard-height", height: h }, "*");
+      }
+    };
+    new ResizeObserver(report).observe(document.documentElement);
+    addEventListener("load", report);
+  }
   // Kleuren volgen het licht/donker-thema van de bezoeker
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", start);
 })();

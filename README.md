@@ -25,6 +25,16 @@ Website-dashboard:
   - `data/duck_curve.csv`: het gemiddelde uurprofiel per jaar, als fractie van de duurste uurprijs van die dag.
   - `data/dayahead_recent.csv`: de day-ahead prijzen per kwartier van de laatste 7 dagen en morgen.
 - Eén blok apart insluiten kan met `?blok=` en een van deze namen: `dayahead`, `maand`, `duck`, `jaar`, `negatief-jaar`, `negatief-aandeel`, `negatief-prijs`, `negatief-maand`, `gas`, `gas-bedrijf`, `capture`, `capture-maand`, `onbalans` of `flex`. Een vast thema kies je met `&thema=licht` of `&thema=donker`.
+- Ingesloten in een iframe meldt de pagina zelf haar hoogte (`postMessage` met type `renewus-dashboard-height`). Met dit stukje code op de website past het kader zich automatisch aan, ook op gsm:
+  ```html
+  <iframe src="https://kennethgev.github.io/belpex-prijzen/?thema=licht" style="width:100%;height:4400px;border:0;display:block" title="Energiemarkt België – Renewus"></iframe>
+  <script>
+  window.addEventListener("message", function (e) {
+    if (e.origin !== "https://kennethgev.github.io" || !e.data || e.data.type !== "renewus-dashboard-height") return;
+    document.querySelectorAll("iframe").forEach(function (f) { if (f.contentWindow === e.source) f.style.height = e.data.height + "px"; });
+  });
+  </script>
+  ```
 - Kleuren en lettertypes volgen de Renewus-huisstijl (navy `#11305F`, turquoise `#04ADAD`, koraal `#F27252`; Montserrat en Open Sans).
 
 Solar capture rate:
