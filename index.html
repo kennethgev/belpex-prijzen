@@ -171,7 +171,7 @@
   <div class="grid">
     <section class="card wide" id="mazout">
       <h3>Maximumprijs gasolie verwarming per maand</h3>
-      <p class="sub">Maandgemiddelde van de officiële maximumprijs van FOD Economie, sinds december 2021. Omgerekend met 10 kWh per liter: € 1,00/L komt overeen met € 100/MWh. De prijs aan de pomp is beschikbaar sinds november 2024.</p>
+      <p class="sub">Maandgemiddelde van de officiële maximumprijs van FOD Economie, sinds december 2021. Omgerekend met 10 kWh per liter: € 1,00/L komt overeen met € 100/MWh.</p>
       <div class="chart"><canvas aria-label="Maximumprijs gasolie verwarming per maand"></canvas></div>
     </section>
   </div>
@@ -477,7 +477,7 @@
       [semLabel(p), ...bands.map(([b]) => { const r = euRows.find(x => x.period === p && x.band === b); return r ? eur.format(+r.price_eur_mwh) : null; })]));
 
     // ---- mazout (officiële maximumprijs)
-    const MZ = [["verwarming_lt2000", "Minder dan 2000 l", NAVY], ["verwarming_ge2000", "Vanaf 2000 l", TEAL], ["verwarming_pomp", "Aan de pomp", CORAL]];
+    const MZ = [["verwarming_lt2000", "Minder dan 2000 l", NAVY], ["verwarming_ge2000", "Vanaf 2000 l", TEAL]];
     const mzMonths = [...new Set(mzMonth.map(r => r.month))].sort();
     const mzPrice = (m, prod) => num(mzMonth.find(r => r.month === m && r.product === prod)?.price_eur_l);
     draw("mazout", {
