@@ -10,6 +10,7 @@ Bronnen:
   - PV-productie België per kwartier (gemeten en voorspeld): Elia Open Data.
   - Gasprijzen uit open bronnen: Wereldbank (Europa/TTF, maandelijks) en Eurostat
     (bedrijven in België, per halfjaar).
+  - Officiële maximumprijzen mazout (gasolie verwarming): FOD Economie via Statbel be.STAT.
 
 Gebruik:
   python fetch_prices.py daily
@@ -19,10 +20,12 @@ Gebruik:
   python fetch_prices.py backfill --source solar --start 2020-10-01
   python fetch_prices.py daily --source weather
   python fetch_prices.py daily --source gas
+  python fetch_prices.py daily --source mazout
 """
 
 import argparse
 import csv
+import io
 import json
 import os
 import re
@@ -853,8 +856,6 @@ def run_gas_open():
       omgerekend naar €/MWh met de maandkoers van de ECB.
     - Eurostat nrg_pc_203: gasprijs voor niet-huishoudelijke verbruikers in België, per halfjaar.
     """
-    import io
-
     import openpyxl
 
     log("Gasprijs (Wereldbank + ECB)")
@@ -915,13 +916,81 @@ def run_gas_open():
     log(f"  gas_eurostat_nonhousehold.csv: {len(rows_eu)} rijen, laatste {rows_eu[-1]['period'] if rows_eu else '-'}")
 
 
+# ---------------------------------------------------------------- mazout
+
+# Officiële maximumprijzen van FOD Economie (programma-overeenkomst), via be.STAT van Statbel.
+# Dezelfde prijzen als op in4fuels.be. De dagtabel bevat enkel de laatste 365 wijzigingen,
+# daarom vullen we het bestand aan in plaats van het te overschrijven.
+BESTAT_URL = "https://bestat.statbel.fgov.be/bestat/api/views/{view}/result/CSV"
+BESTAT_DAILY = "f8d4c0ce-bec4-4f58-b2a2-4f6b8667ad24"  # laatste 365 wijzigingen
+BESTAT_MONTHLY = "484b00b2-4cf2-40b0-89ee-696a30aa4fa5"  # maandgemiddelde, laatste 24 maanden
+BESTAT_YEARLY = "3a4cfb82-0c67-4f97-94f3-58b2509763ab"  # jaargemiddelde, laatste 8 jaar
+# Statbel-productnaam -> korte sleutel
+MAZOUT_PRODUCTS = {
+    "Gasolie verwarming (H0/H7) (minder dan 2000 l) (€/L)": "verwarming_lt2000",
+    "Gasolie verwarming (H0/H7) (vanaf 2000 l) (€/L)": "verwarming_ge2000",
+    "Gasolie verwarming (H0/H7) (aan de pomp) (€/L)": "verwarming_pomp",
+    "Gasolie Diesel Verwarming (minder dan 2000 l) (€/L)": "diesel_verwarming_lt2000",
+    "Gasolie Diesel Verwarming (vanaf 2000 l) (€/L)": "diesel_verwarming_ge2000",
+}
+# Onderste verbrandingswaarde van gasolie verwarming, zoals gangbaar in België (EPB).
+MAZOUT_KWH_PER_L = 10.0
+NL_MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"], 1)}
+
+
+def mazout_rows(view, period_of):
+    text = get(BESTAT_URL.format(view=view), {}).content.decode("utf-8-sig")
+    out = []
+    for r in csv.DictReader(io.StringIO(text)):
+        key = MAZOUT_PRODUCTS.get(r["Product"])
+        price = r[next(k for k in r if k.endswith("rijs incl. BTW"))]  # "Prijs" of "Gemiddelde prijs"
+        if not key or price in (None, ""):
+            continue
+        out.append({
+            "period": period_of(r),
+            "product": key,
+            "price_eur_l": f"{float(price):.4f}",
+            "price_eur_mwh": f"{float(price) / MAZOUT_KWH_PER_L * 1000:.2f}",
+        })
+    if not out:
+        raise RuntimeError(f"geen mazoutprijzen in be.STAT-tabel {view}")
+    return out
+
+
+def merge_mazout(name, rows, date_field):
+    """Vult data/<name> aan: nieuwe waarden overschrijven bestaande voor dezelfde periode en product."""
+    path = DATA_DIR / name
+    fields = [date_field, "product", "price_eur_l", "price_eur_mwh"]
+    merged = {(r[date_field], r["product"]): r for r in read_csv(path)}
+    for r in rows:
+        r = {date_field: r["period"], **{k: r[k] for k in fields[1:]}}
+        merged[(r[date_field], r["product"])] = r
+    out = sorted(merged.values(), key=lambda r: (r[date_field], r["product"]))
+    write_csv(path, fields, out)
+    log(f"  {name}: {len(out)} rijen, laatste {out[-1][date_field]}")
+
+
+def run_mazout():
+    """Officiële maximumprijzen gasolie verwarming (mazout), incl. btw."""
+    log("Mazoutprijzen (FOD Economie via Statbel)")
+
+    def day(r):
+        d = r["Dag"]  # bv. 04nov26
+        return date(2000 + int(d[5:]), NL_MONTHS[d[2:5]], int(d[:2])).isoformat()
+
+    merge_mazout("mazout_daily.csv", mazout_rows(BESTAT_DAILY, day), "date")
+    merge_mazout("mazout_monthly.csv",
+                 mazout_rows(BESTAT_MONTHLY, lambda r: f"{r['Jaar']}-{int(r['Maand']):02d}"), "month")
+    merge_mazout("mazout_yearly.csv", mazout_rows(BESTAT_YEARLY, lambda r: r["Jaar"]), "year")
+
+
 # ---------------------------------------------------------------- main
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("mode", choices=["daily", "backfill"])
-    p.add_argument("--source", choices=["all", "dayahead", "imbalance", "weather", "aws", "solar", "capture", "dashboard", "gas"], default="all")
+    p.add_argument("--source", choices=["all", "dayahead", "imbalance", "weather", "aws", "solar", "capture", "dashboard", "gas", "mazout"], default="all")
     p.add_argument("--start", type=date.fromisoformat, help="eerste dag (JJJJ-MM-DD), Brusselse tijd")
     p.add_argument("--end", type=date.fromisoformat, help="dag na de laatste dag (standaard: overmorgen)")
     args = p.parse_args()
@@ -952,6 +1021,7 @@ def main():
         "capture": compute_solar_capture,
         "dashboard": compute_dashboard,
         "gas": run_gas_open,
+        "mazout": run_mazout,
     }
     depends = {
         "capture": ("dayahead", "solar", "capture"),
