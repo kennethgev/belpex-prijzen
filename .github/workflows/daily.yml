@@ -22,7 +22,7 @@ on:
       source:
         description: "Welke gegevens"
         type: choice
-        options: [all, dayahead, imbalance, weather, aws, solar]
+        options: [all, dayahead, imbalance, weather, aws, solar, gas, mazout]
         default: all
       start:
         description: "Startdatum JJJJ-MM-DD (leeg = standaard)"
