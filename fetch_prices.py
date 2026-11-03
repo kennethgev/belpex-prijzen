@@ -21,6 +21,7 @@ Gebruik:
   python fetch_prices.py daily --source weather
   python fetch_prices.py daily --source gas
   python fetch_prices.py daily --source mazout
+  python fetch_prices.py backfill --source mazout   (5 jaar historiek via in4fuels.be)
 """
 
 import argparse
@@ -970,7 +971,44 @@ def merge_mazout(name, rows, date_field):
     log(f"  {name}: {len(out)} rijen, laatste {out[-1][date_field]}")
 
 
-def run_mazout():
+IN4FUELS_URL = "https://in4fuels.be/nl/tools/brandstofprijs"
+# in4fuels-keuzes (brandstof, hoeveelheid) -> onze productsleutel
+IN4FUELS_COMBOS = [
+    ("gasolie-verwarming", "less_than_2000", "verwarming_lt2000"),
+    ("gasolie-verwarming", "more_than_2000", "verwarming_ge2000"),
+    ("gasolie-verwarming-aan-de-pomp", "less_than_2000", "verwarming_pomp"),
+    ("gasolie-diesel-verwarmingsdoeleinden", "less_than_2000", "diesel_verwarming_lt2000"),
+    ("gasolie-diesel-verwarmingsdoeleinden", "more_than_2000", "diesel_verwarming_ge2000"),
+]
+
+
+def mazout_history_in4fuels():
+    """Dagprijzen van de laatste 5 jaar uit de grafiek van in4fuels.be (dezelfde officiële prijzen).
+
+    Enkel voor de backfill: Statbel geeft de dagprijzen maar voor één jaar terug.
+    """
+    import html
+
+    page = get(IN4FUELS_URL, {}).text
+    token = re.search(r'data-csrf="([^"]+)"', page).group(1)
+    snap = next(html.unescape(s) for s in re.findall(r'wire:snapshot="([^"]+)"', page) if "&quot;fuel_type&quot;" in s)
+    out = []
+    for fuel, amount, key in IN4FUELS_COMBOS:
+        r = session.post("https://in4fuels.be/livewire/update", timeout=120, headers={"X-Livewire": "1"}, json={
+            "_token": token,
+            "components": [{"snapshot": snap, "updates": {"fuel_type": fuel, "amount": amount, "period": "60"}, "calls": []}],
+        })
+        r.raise_for_status()
+        part = r.json()["components"][0]["effects"]["html"]
+        data = json.loads(html.unescape(re.search(r'data-graph-data="([^"]+)"', part).group(1)))
+        for d, v in data.items():
+            out.append({"period": d[:10], "product": key, "price_eur_l": f"{float(v):.4f}",
+                        "price_eur_mwh": f"{float(v) / MAZOUT_KWH_PER_L * 1000:.2f}"})
+        log(f"  in4fuels {key}: {len(data)} dagen sinds {min(data)[:10]}")
+    return out
+
+
+def run_mazout(backfill=False):
     """Officiële maximumprijzen gasolie verwarming (mazout), incl. btw."""
     log("Mazoutprijzen (FOD Economie via Statbel)")
 
@@ -978,10 +1016,29 @@ def run_mazout():
         d = r["Dag"]  # bv. 04nov26
         return date(2000 + int(d[5:]), NL_MONTHS[d[2:5]], int(d[:2])).isoformat()
 
+    if backfill:
+        # Eerst de oudere historiek; de Statbel-cijfers hieronder krijgen voorrang waar ze overlappen.
+        merge_mazout("mazout_daily.csv", mazout_history_in4fuels(), "date")
     merge_mazout("mazout_daily.csv", mazout_rows(BESTAT_DAILY, day), "date")
     merge_mazout("mazout_monthly.csv",
                  mazout_rows(BESTAT_MONTHLY, lambda r: f"{r['Jaar']}-{int(r['Maand']):02d}"), "month")
     merge_mazout("mazout_yearly.csv", mazout_rows(BESTAT_YEARLY, lambda r: r["Jaar"]), "year")
+
+    # Maanden die Statbel niet (meer) toont: gemiddelde over de kalenderdagen, zoals Statbel rekent.
+    known = {(r["month"], r["product"]) for r in read_csv(DATA_DIR / "mazout_monthly.csv")}
+    days = defaultdict(list)
+    for r in read_csv(DATA_DIR / "mazout_daily.csv"):
+        days[(r["date"][:7], r["product"])].append(float(r["price_eur_l"]))
+    this_month = datetime.now(BRUSSELS).strftime("%Y-%m")
+    extra = []
+    for (month, product), values in days.items():
+        if (month, product) in known or month >= this_month or len(values) < 28:
+            continue
+        avg = sum(values) / len(values)
+        extra.append({"period": month, "product": product, "price_eur_l": f"{avg:.4f}",
+                      "price_eur_mwh": f"{avg / MAZOUT_KWH_PER_L * 1000:.2f}"})
+    if extra:
+        merge_mazout("mazout_monthly.csv", extra, "month")
 
 
 # ---------------------------------------------------------------- main
@@ -1021,7 +1078,7 @@ def main():
         "capture": compute_solar_capture,
         "dashboard": compute_dashboard,
         "gas": run_gas_open,
-        "mazout": run_mazout,
+        "mazout": lambda: run_mazout(backfill=args.mode == "backfill"),
     }
     depends = {
         "capture": ("dayahead", "solar", "capture"),
