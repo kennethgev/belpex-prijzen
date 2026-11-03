@@ -18,7 +18,7 @@ Bewaart elke dag automatisch de Belgische elektriciteitsprijzen als CSV-bestande
 
 Website-dashboard:
 
-- `index.html` is een publiek dashboard dat via GitHub Pages draait (`https://kennethgev.github.io/belpex-prijzen/`). Het leest alleen open data uit deze repository.
+- `index.html` is een publiek dashboard dat via GitHub Pages draait op `https://data.renewus.be` (eigen domein, CNAME bij Combell). Het leest alleen open data uit deze repository.
 - Het gebruikt kleine bestanden die elke dag mee berekend worden:
   - `data/dashboard_monthly.csv`: maandoverzicht met gemiddelde day-ahead, uren met negatieve prijs, onbalans tekort/overschot en de theoretische opbrengst van 1 MW flexibiliteit.
   - `data/dashboard_yearly.csv`: jaaroverzicht van de day-ahead prijs en de negatieve prijzen (uren, aandeel van de tijd, gemiddelde negatieve prijs). Een negatieve prijs is hier een prijs onder 0 €/MWh.
@@ -27,10 +27,10 @@ Website-dashboard:
 - Eén blok apart insluiten kan met `?blok=` en een van deze namen: `dayahead`, `maand`, `duck`, `jaar`, `negatief-jaar`, `negatief-aandeel`, `negatief-prijs`, `negatief-maand`, `gas`, `gas-bedrijf`, `capture`, `capture-maand`, `onbalans` of `flex`. Een vast thema kies je met `&thema=licht` of `&thema=donker`.
 - Ingesloten in een iframe meldt de pagina zelf haar hoogte (`postMessage` met type `renewus-dashboard-height`). Met dit stukje code op de website past het kader zich automatisch aan, ook op gsm:
   ```html
-  <iframe src="https://kennethgev.github.io/belpex-prijzen/?thema=licht" style="width:100%;height:4400px;border:0;display:block" title="Energiemarkt België – Renewus"></iframe>
+  <iframe src="https://data.renewus.be/?thema=licht" style="width:100%;height:4400px;border:0;display:block" title="Energiemarkt België – Renewus"></iframe>
   <script>
   window.addEventListener("message", function (e) {
-    if (e.origin !== "https://kennethgev.github.io" || !e.data || e.data.type !== "renewus-dashboard-height") return;
+    if (["https://data.renewus.be", "https://kennethgev.github.io"].indexOf(e.origin) < 0 || !e.data || e.data.type !== "renewus-dashboard-height") return;
     document.querySelectorAll("iframe").forEach(function (f) { if (f.contentWindow === e.source) f.style.height = e.data.height + "px"; });
   });
   </script>
