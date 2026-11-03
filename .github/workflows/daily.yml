@@ -2,9 +2,16 @@ name: Prijzen ophalen
 
 on:
   schedule:
-    # Elke dag om 13:15 UTC (14:15 winter / 15:15 zomer in Brussel),
-    # nadat de day-ahead prijzen voor morgen gepubliceerd zijn.
-    - cron: "15 13 * * *"
+    # De day-ahead prijzen voor morgen verschijnen rond 12u45-13u Brusselse tijd.
+    # GitHub start geplande runs soms uren te laat, vooral op ronde minuten.
+    # Daarom meerdere runs per dag op "rustige" minuten; elke run werkt alles bij
+    # en slaat alleen op als er iets veranderd is.
+    - cron: "7 12 * * *"
+    - cron: "37 12 * * *"
+    - cron: "11 13 * * *"
+    - cron: "43 14 * * *"
+    - cron: "29 17 * * *"
+    - cron: "53 5 * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -64,5 +71,7 @@ jobs:
             echo "Geen nieuwe gegevens."
           else
             git commit -m "Prijzen bijgewerkt $(date -u +%Y-%m-%d)"
+            # Werd er intussen iets geüpload, neem dat eerst mee.
+            git pull --rebase origin main
             git push
           fi
