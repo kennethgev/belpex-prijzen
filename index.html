@@ -167,6 +167,16 @@
     </section>
   </div>
 
+  <h2 class="theme">Mazoutprijs <small>officiële maximumprijs, incl. btw</small></h2>
+  <div class="grid">
+    <section class="card wide" id="mazout">
+      <h3>Maximumprijs gasolie verwarming</h3>
+      <p class="sub">Officiële maximumprijs van FOD Economie, per dag. Omgerekend met 10 kWh per liter: € 1,00/L komt overeen met € 100/MWh.</p>
+      <div class="controls" data-range></div>
+      <div class="chart"><canvas aria-label="Maximumprijs gasolie verwarming"></canvas></div>
+    </section>
+  </div>
+
   <h2 class="theme">Negatieve prijzen <small>day-ahead prijs onder 0 €/MWh</small></h2>
   <div class="grid three">
     <section class="card" id="negatief-jaar">
@@ -220,7 +230,7 @@
   </div>
 
   <footer>
-    Bronnen: ENTSO-E Transparency Platform (day-ahead), Elia Open Data (onbalans, PV-productie), Wereldbank Commodity Price Data (Pink Sheet, CC BY 4.0) en ECB (gasprijs Europa), Eurostat (gasprijs bedrijven). Berekeningen: <a href="https://www.renewus.be">Renewus</a>.
+    Bronnen: ENTSO-E Transparency Platform (day-ahead), Elia Open Data (onbalans, PV-productie), Wereldbank Commodity Price Data (Pink Sheet, CC BY 4.0) en ECB (gasprijs Europa), Eurostat (gasprijs bedrijven), FOD Economie via Statbel (mazout). Berekeningen: <a href="https://www.renewus.be">Renewus</a>.
     Indicatief, zonder garantie.
   </footer>
 </main>
@@ -306,10 +316,11 @@
   }
 
   async function render() {
-    const [recent, monthly, yearly, duck, belix, capY, capM, gasWb, gasEu] = await Promise.all([
+    const [recent, monthly, yearly, duck, belix, capY, capM, gasWb, gasEu, mzDay, mzMonth] = await Promise.all([
       csv("dayahead_recent.csv"), csv("dashboard_monthly.csv"), csv("dashboard_yearly.csv"), csv("duck_curve.csv"),
       csv("belix_monthly.csv"), csv("solar_capture_yearly.csv"), csv("solar_capture_monthly.csv"),
       csv("gas_worldbank_monthly.csv"), csv("gas_eurostat_nonhousehold.csv"),
+      csv("mazout_daily.csv"), csv("mazout_monthly.csv"),
     ]);
     const NAVY = css("--brand-navy"), TEAL = css("--brand-teal"), CORAL = css("--brand-coral"), SLATE = css("--brand-slate"), PAST = css("--past");
     // Vaste kleur per jaar (oud -> nieuw), zodat een jaar overal dezelfde kleur houdt.
@@ -332,6 +343,10 @@
     const gChange = gYear ? lg.price_eur_mwh / gYear.price_eur_mwh - 1 : null;
     tile(`Gasprijs Europa ${maandLabel(lg.month)}`, `€ ${eur.format(+lg.price_eur_mwh)}`,
       gChange == null ? "€/MWh" : `${gChange >= 0 ? "+" : "−"}${pct.format(Math.abs(gChange))} t.o.v. een jaar eerder`);
+    const mzToday = mzDay.filter(r => r.product === "verwarming_lt2000" && r.date <= today).pop();
+    const mzTomorrow = mzDay.find(r => r.product === "verwarming_lt2000" && r.date === tomorrow);
+    if (mzToday) tile("Mazout vandaag", `€ ${eur.format(+mzToday.price_eur_l)}/L`,
+      mzTomorrow ? `morgen € ${eur.format(+mzTomorrow.price_eur_l)}/L · minder dan 2000 l` : "maximumprijs, minder dan 2000 l");
     const lc = capY[capY.length - 1];
     tile(`Solar capture rate ${lc.period}`, pct.format(+lc.solar_capture_rate), lc.final === "true" ? "volledig jaar" : "tot nu toe dit jaar");
     const last = recent[recent.length - 1];
@@ -461,6 +476,36 @@
     });
     addTable("gas-bedrijf", ["Halfjaar", ...bands.map(([b]) => euRows.find(r => r.band === b)?.band_label ?? b)], periods.slice().reverse().map(p =>
       [semLabel(p), ...bands.map(([b]) => { const r = euRows.find(x => x.period === p && x.band === b); return r ? eur.format(+r.price_eur_mwh) : null; })]));
+
+    // ---- mazout (officiële maximumprijs)
+    const MZ = [["verwarming_lt2000", "Minder dan 2000 l", NAVY], ["verwarming_ge2000", "Vanaf 2000 l", TEAL], ["verwarming_pomp", "Aan de pomp", CORAL]];
+    const mzRange = document.querySelector("#mazout [data-range]");
+    const renderMazout = perMonth => {
+      const src = perMonth ? mzMonth : mzDay, key = perMonth ? "month" : "date";
+      const periods = [...new Set(src.map(r => r[key]))].sort();
+      const price = (p, prod) => num(src.find(r => r[key] === p && r.product === prod)?.price_eur_l);
+      const lbl = p => perMonth ? maandLabel(p) : new Date(p + "T12:00").toLocaleDateString("nl-BE", { day: "numeric", month: "short", year: "2-digit" });
+      draw("mazout", {
+        type: "line",
+        data: { labels: periods.map(lbl), datasets: MZ.map(([prod, label, color]) =>
+          line(label, periods.map(p => price(p, prod)), color, perMonth ? { tension: 0, pointRadius: 2 } : { stepped: true, tension: 0 })) },
+        options: opts({ y: { ticks: { color: css("--text-secondary"), callback: v => "€ " + eur.format(v) } },
+          tooltip: { callbacks: { label: c => c.parsed.y == null ? null : ` ${c.dataset.label}: € ${eur.format(c.parsed.y)}/L (€ ${eur0.format(c.parsed.y * 100)}/MWh)` } } }),
+      });
+      addTable("mazout", [perMonth ? "Maand" : "Geldig vanaf", ...MZ.map(([, l]) => l + " (€/L)")], periods.slice().reverse().map(p =>
+        [p, ...MZ.map(([prod]) => { const v = price(p, prod); return v == null ? null : eur.format(v); })]));
+    };
+    if (mzRange) {
+      mzRange.innerHTML = "";
+      [["Per dag", false], ["Per maand", true]].forEach(([label, perMonth], i) => {
+        const b = document.createElement("button");
+        b.textContent = label;
+        b.setAttribute("aria-pressed", i === 0);
+        b.onclick = () => { mzRange.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); renderMazout(perMonth); };
+        mzRange.append(b);
+      });
+    }
+    renderMazout(false);
 
     // ---- negatieve prijzen
     const ny =yearly.filter(r => +r.year >= lastYear - 7);
