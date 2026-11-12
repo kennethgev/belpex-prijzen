@@ -7815,3 +7815,8 @@ date,product,price_eur_l,price_eur_mwh
 2026-11-12,verwarming_ge2000,1.4010,140.10
 2026-11-12,verwarming_lt2000,1.4440,144.40
 2026-11-12,verwarming_pomp,1.5550,155.50
+2026-11-13,diesel_verwarming_ge2000,1.4410,144.10
+2026-11-13,diesel_verwarming_lt2000,1.4840,148.40
+2026-11-13,verwarming_ge2000,1.4020,140.20
+2026-11-13,verwarming_lt2000,1.4450,144.50
+2026-11-13,verwarming_pomp,1.5570,155.70
