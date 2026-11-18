@@ -20,7 +20,7 @@ year,product,price_eur_l,price_eur_mwh
 2025,verwarming_lt2000,0.8390,83.90
 2025,verwarming_pomp,0.9550,95.50
 2026,diesel_verwarming_ge2000,1.2130,121.30
-2026,diesel_verwarming_lt2000,1.2530,125.30
+2026,diesel_verwarming_lt2000,1.2540,125.40
 2026,verwarming_ge2000,1.2040,120.40
 2026,verwarming_lt2000,1.2450,124.50
-2026,verwarming_pomp,1.3610,136.10
+2026,verwarming_pomp,1.3620,136.20
