@@ -130,8 +130,8 @@ def get(url, params, attempts=5):
     for attempt in range(1, attempts + 1):
         try:
             r = session.get(url, params=params, timeout=120)
-            # 599: tijdelijke fout van de ENTSO-E-server
-            if r.status_code in (429, 500, 502, 503, 504, 599):
+            # Elke serverfout (5xx, bv. 527 en 599 bij ENTSO-E) is meestal tijdelijk.
+            if r.status_code == 429 or r.status_code >= 500:
                 raise requests.HTTPError(f"HTTP {r.status_code}")
             return r
         except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as e:
