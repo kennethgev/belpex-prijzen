@@ -126,17 +126,19 @@ def warn(msg):
     print(f"::warning::{msg}" if os.environ.get("GITHUB_ACTIONS") else f"WAARSCHUWING: {msg}", flush=True)
 
 
-def get(url, params, attempts=4):
+def get(url, params, attempts=5):
     for attempt in range(1, attempts + 1):
         try:
             r = session.get(url, params=params, timeout=120)
-            if r.status_code in (429, 500, 502, 503, 504):
+            # 599: tijdelijke fout van de ENTSO-E-server
+            if r.status_code in (429, 500, 502, 503, 504, 599):
                 raise requests.HTTPError(f"HTTP {r.status_code}")
             return r
         except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as e:
             if attempt == attempts:
                 raise
-            wait = 10 * attempt
+            # 30 s, 1, 2 en 4 minuten: een korte storing bij de bron overbruggen
+            wait = 30 * 2 ** (attempt - 1)
             log(f"  fout ({e}), nieuwe poging over {wait}s")
             time.sleep(wait)
 
